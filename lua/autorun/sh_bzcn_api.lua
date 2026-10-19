@@ -1079,8 +1079,14 @@ function BZCN.ApplyClass(ent, className, resetInventory)
     ent.BZCNWalkSpeed = tonumber(profile.WalkSpeed) or BZCN.BaseMoveSpeed
     ent.PlayerClassName = profile.PlayerClassName
     ent.IsFurry = profile.ClassName == "furry"
-    ent.IsOrganism = true
-    ent.hg_organism = true
+    -- Do not advertise a NextBot as an organism unless the matching server
+    -- support module can create and maintain its native Z-City organism table.
+    -- This lets the API/base work standalone without sending Player-only
+    -- organism hooks an entity whose official organism is nil.
+    local support = SERVER and hg and hg.BZCNNPCSupport
+    local nativeOrganismSupport = support and isfunction(support.Attach) or false
+    ent.IsOrganism = nativeOrganismSupport and true or nil
+    ent.hg_organism = nativeOrganismSupport and true or nil
     ent.BZCN_Faction = profile.Faction or profile.ClassName
     ent.BZCN_TeamName = profile.TeamName or profile.Faction or profile.ClassName
 
