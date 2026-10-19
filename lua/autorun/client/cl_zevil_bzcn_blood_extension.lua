@@ -4,6 +4,10 @@
 -- present in that list, so their replicated wound tables otherwise never emit blood.
 if not CLIENT then return end
 
+BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
+
+
 local nextDispatch = 0
 
 local function IsManagedNPC(ent)
