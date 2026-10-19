@@ -3,6 +3,10 @@
 -- are not covered by those hooks, so call the same renderer for them explicitly.
 if not CLIENT then return end
 
+BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
+
+
 local reportedRenderErrors = setmetatable({}, {__mode = "k"})
 
 local function IsManagedHumanNPC(ent)
