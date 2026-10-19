@@ -236,6 +236,45 @@ timer.Create("ZevilVirusThink", 1, 0, function()
     end
 end)
 
+-- Infected players remain player-controlled. At advanced stages they can
+-- deliberately bite nearby victims instead of being forcibly replaced by AI.
+local playerBiteCooldown = setmetatable({}, {__mode = "k"})
+concommand.Add("zevil_bite", function(ply)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+    local v = ply.ZevilVirus
+    if not (istable(v) and v.Infected and (v.Stage or 1) >= 3) then
+        ply:ChatPrint("[Zevil] You need to reach infection stage 3 to bite.")
+        return
+    end
+    if CurTime() < (playerBiteCooldown[ply] or 0) then return end
+    playerBiteCooldown[ply] = CurTime() + 1.4
+    local startPos = ply:EyePos()
+    local aim = ply:GetAimVector()
+    local best, bestDistance
+    for _, target in ipairs(ents.FindInSphere(ply:GetPos(), 88)) do
+        if target == ply or not validHost(target) or target:Health() <= 0 then continue end
+        if target:IsPlayer() and (not target:Alive() or target:Team() == TEAM_SPECTATOR) then continue end
+        if target.ZevilVirus and target.ZevilVirus.Infected then continue end
+        local delta = target:WorldSpaceCenter() - startPos
+        local distance = delta:Length()
+        if distance > 88 or aim:Dot(delta:GetNormalized()) < 0.15 then continue end
+        if not bestDistance or distance < bestDistance then best, bestDistance = target, distance end
+    end
+    ply:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(85, 105))
+    if not IsValid(best) then return end
+    local damage = DamageInfo()
+    damage:SetDamage(9 + (v.Stage or 1))
+    damage:SetDamageType(DMG_SLASH)
+    damage:SetAttacker(ply)
+    damage:SetInflictor(ply)
+    damage:SetDamagePosition(best:WorldSpaceCenter())
+    ply.ZevilBiteDamage = true
+    best:TakeDamageInfo(damage)
+    ply.ZevilBiteDamage = false
+    Z.Expose(best, 20, ply)
+    util.Decal("Blood", best:WorldSpaceCenter() + Vector(0, 0, 12), best:WorldSpaceCenter() - Vector(0, 0, 36), {ply, best})
+end)
+
 local function findPlayer(needle)
     needle = string.Trim(string.lower(tostring(needle or "")))
     if needle == "" then return nil end
