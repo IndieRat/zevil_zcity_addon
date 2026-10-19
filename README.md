@@ -2,30 +2,32 @@
 
 Resident Evil-inspired survival-horror systems for Z-City / Homigrad.
 
-This repository is an addon, not a fork of Z-City. It keeps its own virus state separate from Z-City's organism table and does not rewrite player classes or replace a player's model as part of the custom virus lifecycle.
+Zevil is an addon, not a fork of Z-City. Its custom virus state lives in `ent.ZevilVirus`, separately from Z-City's organism table. The player mutation system preserves the player's existing model, bodygroups, and clothing rather than swapping to a zombie model.
 
-## Initial milestone
+## Implemented foundation
 
-- G-virus-style exposure and staged infection for players and NPCs.
-- Visual mutation that preserves the infected player's current model: sickly tint, progressive bone/pose deformation, and optional eye glow without assigning a zombie model.
-- Infected NPC archetypes with target sensing, melee bite/grab pressure, corpse feeding, and infection transmission.
-- Survivor archetypes, including a rookie-cop / Leon-inspired reference class.
-- Server convars, admin commands, and lifecycle cleanup.
-
-The mod can integrate with Better ZCity NPCs when it is installed, but it does not require BZCN to be present merely to load. Z-City organism interaction is opt-in and guarded; custom virus state is stored on the entity separately.
+- Independent exposure meter and staged infection lifecycle for players and NPCs.
+- Bite-based transmission, configurable incubation/progression, and server commands.
+- Player visual mutation overlay with sickly tint, staged material/bone deformation, and infection HUD.
+- Spawnable Zevil infected NextBot with target acquisition, pursuit, bite attacks, wandering, and corpse-feeding behavior.
+- Rookie-cop survivor archetype using the BZCN base when installed.
+- Infection persistence across player death/respawn; curing clears only Zevil state.
+- Z-City organism internals are not directly modified.
 
 ## Install
 
 Copy this repository into `garrysmod/addons/zevil_zcity_addon`, restart the server, and check the server console for the `[Zevil]` startup line.
 
-## Server commands
+## Commands
 
-- `zevil_infect <player name or userid>` — force-stage a player's infection for testing.
-- `zevil_cure <player name or userid>` — cure and restore cached visual state.
+- `zevil_infect <player name or userid>` — force infection for testing.
+- `zevil_cure <player name or userid>` — cure a player.
 - `zevil_spawn_infected` — spawn an infected NPC at the admin's aim position.
-- `zevil_status` — report active infection counts.
+- `zevil_status` — report infected/exposed counts.
 
-## Main convars
+Spawn `npc_zevil_infected` from the spawn menu or use `zevil_spawn_infected`. Spawn `npc_zevil_rookiecop` when Better Z-City NPCs is installed.
+
+## Main server convars
 
 - `zevil_enabled` (default 1)
 - `zevil_transmission` (default 1)
@@ -36,4 +38,4 @@ Copy this repository into `garrysmod/addons/zevil_zcity_addon`, restart the serv
 - `zevil_mutation_strength` (default 1)
 - `zevil_max_infected` (default 24)
 
-This is an initial playable foundation, not a claim of in-game testing. Test multiplayer and model/material compatibility on a staging server before deployment.
+This is an initial implementation and has not been validated in a live GMod/Z-City server. Test on a staging server before public deployment. Model/material behavior and NextBot activity availability vary by mounted content.
