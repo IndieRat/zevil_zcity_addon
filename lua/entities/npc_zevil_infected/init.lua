@@ -1,0 +1,171 @@
+AddCSLuaFile("shared.lua")
+AddCSLuaFile("cl_init.lua")
+include("shared.lua")
+
+local MODELS = {
+    "models/player/zombie_classic.mdl",
+    "models/player/zombie_fast.mdl",
+    "models/player/group03/male_07.mdl",
+    "models/player/group03/female_07.mdl"
+}
+local function isAliveTarget(ent)
+    return IsValid(ent) and ent ~= NULL and ent:Health() > 0
+        and (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot())
+        and not (ent:IsPlayer() and not ent:Alive())
+        and not (ent.ZevilVirus and ent.ZevilVirus.Infected)
+end
+
+function ENT:Initialize()
+    self:SetModel(self.ZevilModel or MODELS[math.random(#MODELS)])
+    self:SetHealth(100)
+    self:SetMaxHealth(100)
+    self:SetSolid(SOLID_BBOX)
+    self:SetCollisionGroup(COLLISION_GROUP_NPC)
+    self:SetCollisionBounds(Vector(-13, -13, 0), Vector(13, 13, 72))
+    self.loco:SetDesiredSpeed(95)
+    self.loco:SetAcceleration(500)
+    self.loco:SetDeceleration(700)
+    self.loco:SetStepHeight(18)
+    self.loco:SetJumpHeight(35)
+    self.ZevilInfectedAttacker = true
+    self.ZevilVirus = {Infected = true, Stage = 2, Exposure = 100, InfectedAt = CurTime(), NextStage = CurTime() + 120}
+    self:SetNW2Bool("ZevilInfected", true)
+    self:SetNW2Int("ZevilStage", 2)
+    self.NextBite = 0
+    self.NextSearch = 0
+    self.Target = nil
+end
+
+function ENT:FindVictim()
+    local best, bestDist
+    for _, ent in ipairs(ents.FindInSphere(self:GetPos(), 1200)) do
+        if not isAliveTarget(ent) then continue end
+        if ent:IsPlayer() and ent:Team() == TEAM_SPECTATOR then continue end
+        local d = self:GetPos():DistToSqr(ent:GetPos())
+        if not bestDist or d < bestDist then best, bestDist = ent, d end
+    end
+    return best
+end
+
+function ENT:CanSeeTarget(target)
+    if not IsValid(target) then return false end
+    local tr = util.TraceLine({
+        start = self:EyePos(), endpos = target:WorldSpaceCenter(),
+        filter = {self}, mask = MASK_VISIBLE
+    })
+    return not tr.Hit or tr.Entity == target
+end
+
+function ENT:Bite(target)
+    if not isAliveTarget(target) or CurTime() < self.NextBite then return end
+    if self:GetPos():DistToSqr(target:GetPos()) > 78 * 78 then return end
+    self.NextBite = CurTime() + 1.65
+    self:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(90, 105))
+    local dmg = DamageInfo()
+    dmg:SetDamage(12)
+    dmg:SetDamageType(DMG_SLASH)
+    dmg:SetAttacker(self)
+    dmg:SetInflictor(self)
+    dmg:SetDamagePosition(target:WorldSpaceCenter())
+    self.ZevilBiteDamage = true
+    target:TakeDamageInfo(dmg)
+    self.ZevilBiteDamage = false
+    if Zevil and Zevil.Expose then Zevil.Expose(target, 18, self) end
+    if target:IsPlayer() and target:Alive() then
+        target:ViewPunch(Angle(math.Rand(-2, 2), math.Rand(-3, 3), 0))
+    end
+end
+
+function ENT:FindCorpse()
+    local best, bestDist
+    for _, ent in ipairs(ents.FindInSphere(self:GetPos(), 500)) do
+        if not IsValid(ent) or ent == self or ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() then continue end
+        if not ent:GetClass():lower():find("ragdoll", 1, true) then continue end
+        local d = self:GetPos():DistToSqr(ent:GetPos())
+        if not bestDist or d < bestDist then best, bestDist = ent, d end
+    end
+    return best
+end
+
+function ENT:Feed(corpse)
+    if not IsValid(corpse) then return false end
+    self.ZevilFeeding = true
+    self:StartActivity(ACT_IDLE)
+    self.loco:SetDesiredSpeed(0)
+    self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 65, 75)
+    local finish = CurTime() + 4
+    while IsValid(self) and IsValid(corpse) and CurTime() < finish do
+        if self:Health() < self:GetMaxHealth() then self:SetHealth(math.min(self:Health() + 1, self:GetMaxHealth())) end
+        coroutine.wait(0.5)
+    end
+    if IsValid(self) then
+        self.ZevilFeeding = false
+        self.loco:SetDesiredSpeed(95)
+    end
+    return true
+end
+
+function ENT:RunBehaviour()
+    while true do
+        if not IsValid(self) or self:Health() <= 0 then return end
+        local target = self:FindVictim()
+        self.Target = target
+        if IsValid(target) then
+            self:StartActivity(ACT_RUN)
+            self.loco:SetDesiredSpeed(95 + (self.ZevilVirus.Stage or 2) * 7)
+            if self:CanSeeTarget(target) then
+                self:ChaseTarget(target)
+            else
+                self:MoveToPos(target:GetPos(), {lookahead = 300, tolerance = 50, maxage = 1.5})
+            end
+        else
+            local corpse = self:FindCorpse()
+            if IsValid(corpse) then
+                self:StartActivity(ACT_WALK)
+                self.loco:SetDesiredSpeed(65)
+                self:MoveToPos(corpse:GetPos(), {tolerance = 45, maxage = 2})
+                if IsValid(corpse) and self:GetPos():DistToSqr(corpse:GetPos()) < 55 * 55 then self:Feed(corpse) end
+            else
+                self:StartActivity(ACT_WALK)
+                self.loco:SetDesiredSpeed(45)
+                self:MoveToPos(self:GetPos() + VectorRand() * math.random(100, 250), {tolerance = 30, maxage = 2})
+            end
+        end
+        coroutine.yield()
+    end
+end
+
+function ENT:ChaseTarget(target)
+    local path = Path("Follow")
+    path:SetMinLookAheadDistance(200)
+    path:SetGoalTolerance(42)
+    path:Compute(self, target:GetPos())
+    if not path:IsValid() then return end
+    while path:IsValid() and IsValid(target) and isAliveTarget(target) do
+        if self:GetPos():DistToSqr(target:GetPos()) <= 75 * 75 then self:Bite(target) end
+        path:Compute(self, target:GetPos())
+        path:Update(self)
+        if self.loco:IsStuck() then self.loco:ClearStuck() return end
+        coroutine.wait(0.15)
+    end
+end
+
+function ENT:OnInjured(dmg)
+    local attacker = dmg:GetAttacker()
+    if isAliveTarget(attacker) and not (attacker.ZevilVirus and attacker.ZevilVirus.Infected) then self.Target = attacker end
+end
+
+function ENT:OnKilled(dmg)
+    local rag = ents.Create("prop_ragdoll")
+    if IsValid(rag) then
+        rag:SetModel(self:GetModel())
+        rag:SetPos(self:GetPos())
+        rag:SetAngles(self:GetAngles())
+        rag:Spawn()
+        rag:Activate()
+        rag.ZevilCorpse = true
+        SafeRemoveEntityDelayed(rag, 180)
+    end
+    hook.Run("Zevil_InfectedKilled", self, dmg)
+    self:Remove()
+end
