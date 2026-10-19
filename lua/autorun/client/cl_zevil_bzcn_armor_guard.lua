@@ -1,3 +1,8 @@
+if not CLIENT then return end
+
+BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
+
 -- Client-side guard for Z-City's armor renderer.
 -- Z-City's DrawArmors indexes hg.armor[placement][armor] without checking
 -- either lookup. NPC/ragdoll netvars can contain stale or unsupported entries,
