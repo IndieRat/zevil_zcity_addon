@@ -1,3 +1,5 @@
+if SERVER then AddCSLuaFile() end
+
 -- Zevil integration for the pinned BZCN shared API.
 -- This deliberately uses the API's compatibility adapter without calling
 -- BZCN.ApplyClass: that routine marks NPCs as organism-backed and expects the
