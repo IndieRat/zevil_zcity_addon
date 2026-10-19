@@ -3,6 +3,7 @@
 if not CLIENT then return end
 
 BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
 
 surface.CreateFont("BZCN_NPCHudTitle", {
     font = "Bahnschrift",
