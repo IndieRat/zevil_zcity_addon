@@ -1,6 +1,9 @@
 ENT.Type = "nextbot"
-ENT.Base = "npc_bzcn_base"
+ENT.Base = "npc_zevil_bzcn_base"
 ENT.PrintName = "Rookie Cop (Leon-inspired)"
 ENT.Category = "Zevil Z-City - Survivors"
 ENT.Spawnable = true
 ENT.AdminOnly = false
+ENT.BZCNClass = "ZevilRookieCop"
+ENT.Model = "models/player/police.mdl"
+ENT.MoveSpeed = 180
