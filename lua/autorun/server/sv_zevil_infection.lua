@@ -118,7 +118,7 @@ local function isHumanNPC(ent)
     if not IsValid(ent) or ent:IsPlayer() then return false end
     local model = string.lower(ent:GetModel() or "")
     local class = string.lower(ent:GetClass() or "")
-    return model:StartWith("models/humans/") or model:StartWith("models/player/")
+    return string.StartWith(model, "models/humans/") or string.StartWith(model, "models/player/")
         or class == "npc_citizen" or class == "npc_metropolice"
         or class == "npc_barney" or class == "npc_alyx"
         or class == "npc_kleiner" or class == "npc_mossman"
@@ -134,6 +134,7 @@ hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
     local groups = {}
     for i = 0, math.max(old:GetNumBodyGroups() - 1, -1) do groups[i] = old:GetBodygroup(i) end
     local velocity = old:GetVelocity()
+    local formerName = isfunction(old.Nick) and old:Nick() or (isfunction(old.GetName) and old:GetName() or "")
     local infected = table.Copy(old.ZevilVirus or {})
     local zombie = ents.Create("npc_zevil_infected")
     if not IsValid(zombie) then
@@ -141,6 +142,7 @@ hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
         return
     end
     zombie.ZevilModel = model
+    zombie.ZevilFormerName = formerName ~= "" and formerName or nil
     zombie:SetPos(pos)
     zombie:SetAngles(ang)
     zombie:Spawn()
