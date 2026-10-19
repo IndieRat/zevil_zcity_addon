@@ -21,6 +21,7 @@ function ENT:Initialize()
     self:SetMaxHealth(100)
     self:SetSolid(SOLID_BBOX)
     self:SetCollisionGroup(COLLISION_GROUP_NPC)
+    self:SetColor(Color(132, 145, 112, 255)) -- sickly, desaturated infected skin
     self:SetCollisionBounds(Vector(-13, -13, 0), Vector(13, 13, 72))
     self.loco:SetDesiredSpeed(95)
     self.loco:SetAcceleration(500)
@@ -32,6 +33,7 @@ function ENT:Initialize()
     self:SetNW2Bool("ZevilInfected", true)
     self:SetNW2Int("ZevilStage", 2)
     self.NextBite = 0
+    self.NextLunge = 0
     self.NextSearch = 0
     self.Target = nil
 end
@@ -60,7 +62,10 @@ function ENT:Bite(target)
     if not isAliveTarget(target) or CurTime() < self.NextBite then return end
     if self:GetPos():DistToSqr(target:GetPos()) > 78 * 78 then return end
     self.NextBite = CurTime() + 1.65
-    self:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(90, 105))
+    self:StartActivity(ACT_MELEE_ATTACK1)
+    self:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(82, 108))
+    local hitPos = target:WorldSpaceCenter()
+    util.Decal("Blood", hitPos + Vector(0, 0, 16), hitPos - Vector(0, 0, 48), {self, target})
     local dmg = DamageInfo()
     dmg:SetDamage(12)
     dmg:SetDamageType(DMG_SLASH)
@@ -142,7 +147,17 @@ function ENT:ChaseTarget(target)
     path:Compute(self, target:GetPos())
     if not path:IsValid() then return end
     while path:IsValid() and IsValid(target) and isAliveTarget(target) do
-        if self:GetPos():DistToSqr(target:GetPos()) <= 75 * 75 then self:Bite(target) end
+        local distanceSqr = self:GetPos():DistToSqr(target:GetPos())
+        if distanceSqr <= 75 * 75 then
+            self:Bite(target)
+        elseif distanceSqr <= 150 * 150 and CurTime() >= self.NextLunge then
+            -- Occasional forward lunge breaks up the straight-line shamble.
+            self.NextLunge = CurTime() + math.Rand(3.5, 6.5)
+            self:StartActivity(ACT_MELEE_ATTACK1)
+            local direction = (target:WorldSpaceCenter() - self:WorldSpaceCenter()):GetNormalized()
+            self.loco:SetVelocity(direction * math.Rand(170, 245) + Vector(0, 0, 85))
+            self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 72, math.random(80, 100))
+        end
         path:Compute(self, target:GetPos())
         path:Update(self)
         if self.loco:IsStuck() then self.loco:ClearStuck() return end
