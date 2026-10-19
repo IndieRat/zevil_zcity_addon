@@ -236,4 +236,35 @@ concommand.Add("zevil_status", function(ply)
     if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
 end)
 
+concommand.Add("zevil_spawn_infected", function(ply)
+    if IsValid(ply) and not ply:IsAdmin() then return end
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_zevil_infected")) do
+        if IsValid(ent) then count = count + 1 end
+    end
+    if count >= cv.zevil_max_infected:GetInt() then
+        if IsValid(ply) then ply:ChatPrint("[Zevil] Infected NPC limit reached.") end
+        return
+    end
+    local pos, ang
+    if IsValid(ply) then
+        local tr = ply:GetEyeTrace()
+        pos = tr.HitPos + tr.HitNormal * 8
+        ang = Angle(0, ply:EyeAngles().y + 180, 0)
+    else
+        pos = Vector(0, 0, 32)
+        ang = angle_zero
+    end
+    local ent = ents.Create("npc_zevil_infected")
+    if not IsValid(ent) then
+        if IsValid(ply) then ply:ChatPrint("[Zevil] Could not create npc_zevil_infected.") end
+        return
+    end
+    ent:SetPos(pos)
+    ent:SetAngles(ang)
+    ent:Spawn()
+    ent:Activate()
+    if IsValid(ply) then ply:ChatPrint("[Zevil] Spawned infected NPC.") end
+end)
+
 print("[Zevil] Virus lifecycle loaded (independent organism-safe state).")
