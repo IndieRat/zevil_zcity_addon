@@ -15,6 +15,39 @@ local function isAliveTarget(ent)
         and not (ent.ZevilVirus and ent.ZevilVirus.Infected)
 end
 
+local function SetupBZCNCompatibility(self)
+    if not BZCN or not isfunction(BZCN.InstallAdapter) or not isfunction(BZCN.GetClass) then return end
+
+    -- Mark the NextBot as an API-managed NPC while deliberately avoiding
+    -- BZCN.ApplyClass, which enables the separate organism-support path.
+    self.BZCNManaged = true
+    self.BZCNClass = "ZevilInfected"
+    self.PlayerClassName = "ZevilInfected"
+    self.BZCNClassProfile = table.Copy(BZCN.GetClass("ZevilInfected") or {})
+    self:SetNW2Bool("BZCNManaged", true)
+    self:SetNW2String("BZCNClass", "ZevilInfected")
+    self:SetNW2String("PlayerClassName", "ZevilInfected")
+    self:SetNW2String("BZCNClassName", "Zevil Infected")
+    self.BZCN_Faction = "zombie"
+    self.BZCN_TeamName = "Zevil"
+    self:SetNW2String("BZCNFaction", "zombie")
+    self:SetNW2String("BZCNTeamName", "Zevil")
+
+    BZCN.InstallAdapter(self)
+    local displayName = "Infected " .. tostring(self:EntIndex())
+    self.BZCNDisplayName = displayName
+    self.PlayerName = displayName
+    self:SetNW2String("BZCNDisplayName", displayName)
+    if isfunction(BZCN.SetNetVar) then
+        BZCN.SetNetVar(self, "PlayerName", displayName)
+        BZCN.SetNetVar(self, "BZCNFaction", "zombie")
+        BZCN.SetNetVar(self, "Inventory", {
+            Weapons = {}, Items = {}, Ammo = {}, Attachments = {}, Armor = {}
+        })
+        BZCN.SetNetVar(self, "Armor", {})
+    end
+end
+
 function ENT:Initialize()
     self:SetModel(self.ZevilModel or MODELS[math.random(#MODELS)])
     self:SetHealth(100)
@@ -32,6 +65,7 @@ function ENT:Initialize()
     self.ZevilVirus = {Infected = true, Stage = 2, Exposure = 100, InfectedAt = CurTime(), NextStage = CurTime() + 120}
     self:SetNW2Bool("ZevilInfected", true)
     self:SetNW2Int("ZevilStage", 2)
+    SetupBZCNCompatibility(self)
     self.NextBite = 0
     self.NextLunge = 0
     self.NextSearch = 0
