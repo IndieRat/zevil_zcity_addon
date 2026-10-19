@@ -13,6 +13,7 @@ if SERVER then
     AddCSLuaFile("autorun/client/cl_zevil_bzcn_tpik_adapter.lua")
     AddCSLuaFile("autorun/client/cl_zevil_bzcn_npc_chat.lua")
     AddCSLuaFile("autorun/client/cl_zevil_bzcn_blood_extension.lua")
+    AddCSLuaFile("autorun/client/cl_zevil_bzcn_armor_guard.lua")
 end
 
 BZCN = BZCN or {}
