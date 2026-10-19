@@ -12,8 +12,13 @@ Zevil is an addon, not a fork of Z-City. Its custom virus state lives in `ent.Ze
 - Spawnable Zevil infected NextBot with target acquisition, pursuit, bite attacks, wandering, corpse-feeding, sickly coloration, mouth-blood visuals, and occasional lunges.
 - Fully infected human NPCs are converted into roaming infected while preserving their model, skin, bodygroups, position, and approximate health.
 - Infected players retain their player model and control; from stage 3 onward, `zevil_bite` lets them attack nearby targets.
-- Rookie-cop survivor archetype using the BZCN base when installed.
+- Vendored BZCN shared API from commit `45fd28071c9b1f48e7bff5d4403bc3fb0f1ec147`, including NPC class registration, name generation, netvar/inventory adapters, weapon-model resolution, and managed-NPC compatibility methods.
+- Namespaced copy of the BZCN NPC base (`npc_zevil_bzcn_base`) so the rookie-cop survivor works without overwriting the external `npc_bzcn_base` class when BZCN is also installed.
+- Companion BZCN client bridges for managed NPC presentation, HUD, accessories, TPIK/weapon poses, chat, and blood effects.
+- API integration profiles for the custom infection faction and Leon-inspired rookie-cop survivor.
 - Infection persistence across player death/respawn; curing clears only Zevil state.
+- The infection adapter intentionally does not call `BZCN.ApplyClass` for infected NextBots, avoiding automatic `IsOrganism` flags when the optional native organism-support module is absent.
+- The vendored API only advertises a native organism-backed NPC when `hg.BZCNNPCSupport.Attach` is available; otherwise managed NPCs use the API's safe netvar/identity bridge without creating a fake Z-City organism.
 - Z-City organism internals are not directly modified.
 
 ## Install
@@ -41,4 +46,4 @@ Spawn `npc_zevil_infected` from the spawn menu or use `zevil_spawn_infected`. Sp
 - `zevil_mutation_strength` (default 1)
 - `zevil_max_infected` (default 24)
 
-This is an initial implementation and has not been validated in a live GMod/Z-City server. The horde behavior is currently emergent from multiple infected NextBots independently acquiring nearby living targets; there is not yet a dedicated pack director, sound-attraction system, or cinematic horde scheduler. Test on a staging server before public deployment. Model/material behavior and NextBot activity availability vary by mounted content.
+The vendored API is based on the pinned BZCN commit listed above; this does not vendor every separate BZCN gameplay module (for example, the full task director, injury subsystem, or runtime weapon bridge). If the original BZCN addon is installed, those systems can still provide their optional hooks. These changes have not been validated in a live GMod/Z-City server. The horde behavior is currently emergent from multiple infected NextBots independently acquiring nearby living targets; there is not yet a dedicated pack director, sound-attraction system, or cinematic horde scheduler. Test on a staging server before public deployment. Model/material behavior and NextBot activity availability vary by mounted content.
