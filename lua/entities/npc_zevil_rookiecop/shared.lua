@@ -4,3 +4,6 @@ ENT.PrintName = "Rookie Cop (Leon-inspired)"
 ENT.Category = "Zevil Z-City - Survivors"
 ENT.Spawnable = true
 ENT.AdminOnly = false
+ENT.BZCNClass = "ZevilRookieCop"
+ENT.Model = "models/player/police.mdl"
+ENT.MoveSpeed = 180
