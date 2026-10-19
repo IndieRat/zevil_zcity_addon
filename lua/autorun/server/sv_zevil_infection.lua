@@ -112,15 +112,57 @@ function Z.SetStage(ent, stage)
     return true
 end
 
-local function getTargetsInSphere(pos, radius)
-    local found = ents.FindInSphere(pos, radius)
-    for _, ent in ipairs(found) do
-        if IsValid(ent) and ent:IsPlayer() and ent:Alive() and not ent.ZevilVirus then
-            -- Exposure is accumulated; no instant conversion from proximity.
-            Z.Expose(ent, 2, nil)
-        end
-    end
+-- A human NPC becomes a roaming infected entity at full infection. Players keep
+-- their existing entity/model so their controls and Z-City player systems survive.
+local function isHumanNPC(ent)
+    if not IsValid(ent) or ent:IsPlayer() then return false end
+    local model = string.lower(ent:GetModel() or "")
+    local class = string.lower(ent:GetClass() or "")
+    return model:StartWith("models/humans/") or model:StartWith("models/player/")
+        or class == "npc_citizen" or class == "npc_metropolice"
+        or class == "npc_barney" or class == "npc_alyx"
+        or class == "npc_kleiner" or class == "npc_mossman"
+        or class == "npc_zevil_rookiecop"
 end
+
+hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
+    if not enabled() or not isHumanNPC(host) or host:GetClass() == "npc_zevil_infected" then return end
+    local old = host
+    local pos, ang, model = old:GetPos(), old:GetAngles(), old:GetModel()
+    local hp, maxhp = math.max(old:Health(), 1), math.max(old:GetMaxHealth(), 1)
+    local skin = old:GetSkin()
+    local groups = {}
+    for i = 0, math.max(old:GetNumBodyGroups() - 1, -1) do groups[i] = old:GetBodygroup(i) end
+    local velocity = old:GetVelocity()
+    local infected = table.Copy(old.ZevilVirus or {})
+    local zombie = ents.Create("npc_zevil_infected")
+    if not IsValid(zombie) then
+        ErrorNoHalt("[Zevil] Failed to convert infected human NPC; keeping original entity.\n")
+        return
+    end
+    zombie.ZevilModel = model
+    zombie:SetPos(pos)
+    zombie:SetAngles(ang)
+    zombie:Spawn()
+    zombie:Activate()
+    if not IsValid(zombie) then return end
+    zombie:SetModel(model)
+    if skin and skin >= 0 then zombie:SetSkin(skin) end
+    for i, value in pairs(groups) do
+        if i < zombie:GetNumBodyGroups() then zombie:SetBodygroup(i, value) end
+    end
+    zombie:SetMaxHealth(maxhp)
+    zombie:SetHealth(math.min(hp, maxhp))
+    zombie:SetVelocity(velocity)
+    zombie.ZevilVirus = infected
+    zombie.ZevilVirus.Infected = true
+    zombie.ZevilVirus.Stage = math.max(zombie.ZevilVirus.Stage or 1, 2)
+    zombie.ZevilVirus.Source = IsValid(source) and source or zombie.ZevilVirus.Source
+    zombie:SetNW2Bool("ZevilInfected", true)
+    zombie:SetNW2Int("ZevilStage", zombie.ZevilVirus.Stage)
+    hook.Run("Zevil_HumanNPCConverted", old, zombie)
+    old:Remove()
+end)
 
 hook.Add("EntityTakeDamage", "Zevil_BiteTransmission", function(target, dmg)
     if not enabled() or not validHost(target) then return end
@@ -143,7 +185,6 @@ hook.Add("EntityTakeDamage", "ZevilPlayerExposureFromInfected", function(target,
     local attacker = dmg:GetAttacker()
     if not IsValid(attacker) or attacker == target then return end
     if attacker.ZevilVirus and attacker.ZevilVirus.Infected then return end
-    -- Generic infected contact damage can expose hosts when explicitly marked by Zevil AI.
     if attacker.ZevilInfectedAttacker then Z.Expose(target, 25, attacker) end
 end)
 
@@ -152,7 +193,6 @@ hook.Add("PlayerInitialSpawn", "ZevilSyncOnJoin", function(ply)
 end)
 
 hook.Add("PlayerDeath", "ZevilKeepVirusAcrossDeath", function(ply)
-    -- Death is not a cure. Keep the virus state for the next spawn.
     if istable(ply.ZevilVirus) then ply.ZevilVirus.DeadAt = CurTime() end
 end)
 
@@ -180,8 +220,6 @@ timer.Create("ZevilVirusThink", 1, 0, function()
             replicate(ent)
             hook.Run("Zevil_StageChanged", ent, v.Stage)
         end
-        -- Early stages are mainly symptomatic. Damage is deliberately mild and
-        -- independent from organism internals; no assumptions about org schema.
         if ent:IsPlayer() and v.Stage >= 3 and now >= (v.NextDamage or math.huge) then
             local damage = DamageInfo()
             damage:SetDamage(v.Stage >= 5 and 2 or 1)
