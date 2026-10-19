@@ -34,7 +34,8 @@ local function SetupBZCNCompatibility(self)
     self:SetNW2String("BZCNTeamName", "Zevil")
 
     BZCN.InstallAdapter(self)
-    local displayName = "Infected " .. tostring(self:EntIndex())
+    local formerName = string.Trim(tostring(self.ZevilFormerName or ""))
+    local displayName = formerName ~= "" and (formerName .. " (infected)") or ("Infected " .. tostring(self:EntIndex()))
     self.BZCNDisplayName = displayName
     self.PlayerName = displayName
     self:SetNW2String("BZCNDisplayName", displayName)
