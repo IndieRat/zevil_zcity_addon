@@ -4,6 +4,7 @@
 if not CLIENT then return end
 
 BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
 
 local function IsManaged(ent)
     return IsValid(ent) and ent.GetNW2Bool and ent:GetNW2Bool("BZCNManaged", false)
