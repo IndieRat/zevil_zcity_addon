@@ -65,3 +65,19 @@ local function RegisterZevilClasses()
 end
 
 RegisterZevilClasses()
+
+-- Zevil is the infection source of truth. If the full external BZCN addon is
+-- also mounted, turn off its legacy headcrab conversion rule to prevent a
+-- second, competing infection lifecycle from converting victims.
+if SERVER then
+    hook.Add("Initialize", "Zevil_DisableLegacyHeadcrabInfection", function()
+        timer.Simple(0, function()
+            local legacyRule = GetConVar("bzcn_rule_headcrab_infection")
+            if legacyRule and legacyRule:GetBool() then
+                RunConsoleCommand("bzcn_rule_headcrab_infection", "0")
+                print("[Zevil] Disabled legacy BZCN headcrab infection; Zevil owns infection progression.")
+            end
+        end)
+    end)
+end
+
