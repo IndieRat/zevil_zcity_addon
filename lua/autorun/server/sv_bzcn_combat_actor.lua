@@ -1,0 +1,532 @@
+-- BZCN combat actor: weapon-aware aim, target-body resolution and firing cadence.
+-- A managed NPC remains a NextBot. The actor adapts decisions to the real entity
+-- and to Z-City's visible fake-ragdoll body without pretending to be a Player.
+
+if not SERVER then return end
+
+BZCN = BZCN or {}
+BZCNCombatActor = BZCNCombatActor or {}
+local Actor = BZCNCombatActor
+if BZCN.AIManager then BZCN.AIManager.RegisterSubsystem("combat", Actor) end
+
+Actor.Version = 1
+Actor.DefaultLeadTime = 0.10
+Actor.MaxLeadTime = 0.24
+
+local function IsValidEntity(ent)
+    return IsValid(ent) and isfunction(ent.GetClass)
+end
+
+local function IsRagdollEntity(ent)
+    if not IsValidEntity(ent) then return false end
+    if ent:GetClass() == "prop_ragdoll" then return true end
+    if isfunction(ent.IsRagdoll) then
+        local ok, result = pcall(ent.IsRagdoll, ent)
+        return ok and result == true
+    end
+    return false
+end
+
+local function NetworkOwner(ent)
+    if not IsValidEntity(ent) then return nil end
+    local owner = ent.BZCNNPCOwner
+    if not IsValidEntity(owner) and ent.GetNW2Entity then
+        owner = ent:GetNW2Entity("BZCNNPCOwner")
+    end
+    if not IsValidEntity(owner) and ent.GetNWEntity then
+        owner = ent:GetNWEntity("BZCNNPCOwner")
+    end
+    if not IsValidEntity(owner) and IsRagdollEntity(ent) then
+        owner = ent.BZCNNPCOwner or ent.ply or ent.Player
+        if not IsValidEntity(owner) and hg and isfunction(hg.RagdollOwner) then
+            local ok, result = pcall(hg.RagdollOwner, ent)
+            if ok then owner = result end
+        end
+    end
+    return IsValidEntity(owner) and owner ~= ent and owner or nil
+end
+
+function Actor.ResolveTarget(target)
+    if not IsValidEntity(target) then return nil end
+    return NetworkOwner(target) or target
+end
+
+local function FindFakeRagdoll(owner)
+    if not IsValidEntity(owner) then return nil end
+    local candidates = {}
+    local function addCandidate(body)
+        if IsRagdollEntity(body) then candidates[#candidates + 1] = body end
+    end
+    addCandidate(owner.BZCNNPCRagdoll)
+    addCandidate(owner.FakeRagdoll)
+    addCandidate(owner.ragdoll)
+    if owner.GetNWEntity then
+        addCandidate(owner:GetNWEntity("FakeRagdoll"))
+        addCandidate(owner:GetNWEntity("ragdoll"))
+    end
+    if owner.GetNW2Entity then addCandidate(owner:GetNW2Entity("FakeRagdoll")) end
+    for _, body in ipairs(candidates) do
+        if IsRagdollEntity(body) and NetworkOwner(body) == owner then return body end
+    end
+    if IsRagdollEntity(owner.FakeRagdoll) then return owner.FakeRagdoll end
+    return nil
+end
+
+function Actor.GetVisibleBody(target)
+    if not IsValidEntity(target) then return nil end
+    local owner = Actor.ResolveTarget(target)
+
+    -- A ragdoll encountered by the sensing scan is the actual visible body.
+    if target ~= owner and IsRagdollEntity(target) then return target end
+
+    local rag = FindFakeRagdoll(owner)
+    if IsValidEntity(rag) then return rag end
+
+    -- Some Z-City versions expose the active character through this helper.
+    -- Only use it when it really returns a different ragdoll entity.
+    if owner and owner:IsPlayer() and hg and isfunction(hg.GetCurrentCharacter) then
+        local ok, current = pcall(hg.GetCurrentCharacter, owner)
+        if ok and IsRagdollEntity(current) then return current end
+    end
+    return owner
+end
+
+local TORSO_BONES = {
+    "ValveBiped.Bip01_Spine2",
+    "ValveBiped.Bip01_Spine1",
+    "ValveBiped.Bip01_Spine",
+    "ValveBiped.Bip01_Pelvis"
+}
+
+local function GetRagdollTorso(body)
+    if not IsRagdollEntity(body) then return nil, nil end
+    if body.SetupBones then pcall(body.SetupBones, body) end
+    for _, name in ipairs(TORSO_BONES) do
+        local bone = body.LookupBone and body:LookupBone(name)
+        if bone and body.TranslateBoneToPhysBone and body.GetPhysicsObjectNum then
+            local ok, physIndex = pcall(body.TranslateBoneToPhysBone, body, bone)
+            if ok and isnumber(physIndex) and physIndex >= 0 then
+                local phys = body:GetPhysicsObjectNum(physIndex)
+                if IsValid(phys) then return phys:GetPos(), phys end
+            end
+        end
+        if bone and body.GetBonePosition then
+            local ok, pos = pcall(body.GetBonePosition, body, bone)
+            if ok and isvector(pos) and pos ~= vector_origin then return pos, nil end
+        end
+    end
+
+    local count = body.GetPhysicsObjectCount and body:GetPhysicsObjectCount() or 0
+    for index = 0, math.max(count - 1, -1) do
+        local phys = body:GetPhysicsObjectNum(index)
+        if IsValid(phys) then return phys:GetPos(), phys end
+    end
+    return body:WorldSpaceCenter(), nil
+end
+
+function Actor.GetTargetAimPoint(target)
+    if not IsValidEntity(target) then return nil end
+    local owner = Actor.ResolveTarget(target)
+    local body = Actor.GetVisibleBody(target)
+    if not IsValidEntity(body) then body = owner end
+    if not IsValidEntity(body) then return nil end
+
+    if body ~= owner or IsRagdollEntity(body) then
+        local torso = GetRagdollTorso(body)
+        if isvector(torso) then return torso, body end
+    end
+    if body.WorldSpaceCenter then return body:WorldSpaceCenter(), body end
+    return body:GetPos(), body
+end
+
+function Actor.GetTargetPosition(target)
+    if not IsValidEntity(target) then return nil end
+    local owner = Actor.ResolveTarget(target)
+    local body = Actor.GetVisibleBody(target)
+    if not IsValidEntity(body) then body = owner end
+    if not IsValidEntity(body) then return nil end
+    if body == owner and not IsRagdollEntity(body) then return body:GetPos() end
+
+    local torso = GetRagdollTorso(body)
+    if not isvector(torso) then return body:GetPos() end
+    -- Path followers need a ground-level destination, not the hidden owner's
+    -- stale origin or the torso's height above the floor.
+    local floor = util.TraceLine({
+        start = torso + Vector(0, 0, 18),
+        endpos = torso - Vector(0, 0, 180),
+        filter = {body, owner},
+        mask = MASK_SOLID
+    })
+    if floor.Hit and isvector(floor.HitPos) then return floor.HitPos + Vector(0, 0, 4) end
+    return torso - Vector(0, 0, 30)
+end
+
+function Actor.GetWeaponHoldType(owner, weapon, weaponClass)
+    weaponClass = weaponClass or (IsValidEntity(weapon) and weapon:GetClass())
+        or (IsValidEntity(owner) and owner.BZCN_SelectedWeapon) or ""
+
+    -- Use weapon-specific animation pools before a class's default. Some
+    -- Homigrad SWEPs intentionally report an unusual HoldType for grip code.
+    if weaponClass == "weapon_glock17" then return "pistol" end
+    if weaponClass == "weapon_ak74" or weaponClass == "weapon_ak74u"
+        or weaponClass == "weapon_akm" or weaponClass == "weapon_ak47"
+        or weaponClass == "weapon_mp7" then
+        return "smg"
+    end
+
+    local stored = weapons and weapons.GetStored and weapons.GetStored(weaponClass)
+    local hold = IsValidEntity(weapon) and (weapon.HoldType or weapon.holdtype)
+        or (istable(stored) and (stored.HoldType or stored.holdtype)) or nil
+    hold = isstring(hold) and string.lower(hold) or nil
+    local translator = {
+        revolver = "pistol", duel = "pistol",
+        physgun = "smg", ar2 = "smg", slam = "smg",
+        crossbow = "shotgun", rpg = "grenade",
+        fist = "normal", melee2 = "melee", knife = "melee"
+    }
+    if hold and hold ~= "" then return translator[hold] or hold end
+
+    local profile = IsValidEntity(owner) and (owner.BZCNClassProfile or {}) or {}
+    if isstring(profile.AnimationHoldType) and profile.AnimationHoldType ~= "" then
+        return string.lower(profile.AnimationHoldType)
+    end
+    return "normal"
+end
+
+function Actor.ApplyWeaponAnimationPool(owner, weapon, weaponClass)
+    if not IsValidEntity(owner) then return "normal" end
+    local hold = Actor.GetWeaponHoldType(owner, weapon, weaponClass)
+    owner.BZCNCombatHoldType = hold
+    owner.BZCNCombatHoldWeaponClass = weaponClass
+        or (IsValidEntity(weapon) and weapon:GetClass())
+        or (IsValidEntity(owner) and owner.BZCN_SelectedWeapon) or ""
+    owner.ixAnimHoldType = hold
+    return hold
+end
+
+local function ClampVectorLength(vector, limit)
+    local length = vector:Length()
+    if length > limit and length > 0 then return vector * (limit / length) end
+    return vector
+end
+
+local function GetTargetVelocity(target, body)
+    if IsRagdollEntity(body) then
+        local _, phys = GetRagdollTorso(body)
+        if IsValid(phys) then return phys:GetVelocity() end
+        if body.GetVelocity then return body:GetVelocity() end
+    end
+    local owner = Actor.ResolveTarget(target)
+    return IsValidEntity(owner) and owner.GetVelocity and owner:GetVelocity() or vector_origin
+end
+
+local function GetLeadTime(attacker, target, weapon, distance, isRagdoll)
+    local profile = attacker.BZCNClassProfile or {}
+    local configured = tonumber(profile.AimLeadTime)
+    if configured then return math.Clamp(configured, 0, Actor.MaxLeadTime) end
+
+    local primary = IsValidEntity(weapon) and weapon.Primary or {}
+    local ammo = primary and primary.Ammo
+    local ammoDef = hg and hg.ammotypeshuy and ammo and hg.ammotypeshuy[ammo]
+    local bulletSettings = istable(ammoDef) and ammoDef.BulletSettings or nil
+    local speed = tonumber(bulletSettings and bulletSettings.Speed)
+    local lead
+    if speed and speed > 100 then
+        lead = distance / speed
+    else
+        lead = Actor.DefaultLeadTime + distance / 18000
+    end
+    if isRagdoll then lead = math.min(lead, 0.075) end
+    return math.Clamp(lead, 0.025, Actor.MaxLeadTime)
+end
+
+-- Friendly-fire guard shared by aim selection and the final fire gate.
+local function IsFriendlyActor(attacker, candidate)
+    if not IsValidEntity(candidate) or candidate == attacker then return false end
+    local resolved = Actor.ResolveTarget(candidate) or candidate
+    if resolved == attacker then return false end
+    if isfunction(attacker.IsBZCNAlly) then
+        local ok, ally = pcall(attacker.IsBZCNAlly, attacker, resolved)
+        if ok and ally == true then return true end
+    end
+    if BZCN and isfunction(BZCN.IsManaged) and BZCN.IsManaged(resolved) then
+        local own = attacker.BZCNClassProfile or {}
+        local other = resolved.BZCNClassProfile or {}
+        local a = own.Faction or attacker.BZCN_Faction or attacker.BZCNClass
+        local b = other.Faction or resolved.BZCN_Faction or resolved.BZCNClass
+        if a ~= nil and b ~= nil and tostring(a) == tostring(b) then return true end
+    end
+    return false
+end
+
+local function IsExplosiveWeapon(weapon)
+    local stored = isstring(weapon) and weapons and weapons.GetStored and weapons.GetStored(weapon) or nil
+    if not isstring(weapon) and not IsValidEntity(weapon) then return false end
+    local class = string.lower(isstring(weapon) and weapon or weapon:GetClass() or "")
+    local definition = IsValidEntity(weapon) and weapon or stored
+    local hold = string.lower(tostring(definition and (definition.HoldType or definition.holdtype) or ""))
+    local primary = definition and istable(definition.Primary) and definition.Primary or {}
+    return hold == "rpg" or hold == "grenade"
+        or string.find(class, "grenade", 1, true) ~= nil
+        or string.find(class, "launcher", 1, true) ~= nil
+        or string.find(class, "rpg", 1, true) ~= nil
+        or string.find(class, "rocket", 1, true) ~= nil
+        or string.find(class, "explosive", 1, true) ~= nil
+        or primary.BlastRadius ~= nil or primary.ExplosionRadius ~= nil
+        or primary.ProjectileClass ~= nil or primary.Projectile ~= nil
+end
+
+local function TraceShotLane(attacker, target, startPos, endPos, weapon)
+    local filter = {attacker}
+    if IsValidEntity(weapon) then filter[#filter + 1] = weapon end
+    if IsValidEntity(attacker.BZCNHeldWeaponProxy) then filter[#filter + 1] = attacker.BZCNHeldWeaponProxy end
+    local tr = util.TraceLine({start = startPos, endpos = endPos, filter = filter, mask = MASK_SHOT})
+    if IsFriendlyActor(attacker, tr.Entity) then return false, tr.Entity end
+    -- A lane is valid only if it reaches the intended target/body. An empty
+    -- trace is not proof of a safe flank; it could just be a guaranteed miss.
+    if not tr.Hit then return false, nil end
+    if tr.Entity ~= target and Actor.ResolveTarget(tr.Entity) ~= target then
+        return false, tr.Entity
+    end
+    return true, nil
+end
+
+function Actor.GetFriendlyFireStatus(attacker, target, weapon, aimPoint)
+    if not IsValidEntity(attacker) or not IsValidEntity(target) then return true end
+    local source = attacker.EyePos and attacker:EyePos() or attacker:WorldSpaceCenter()
+    local point = isvector(aimPoint) and aimPoint or Actor.GetTargetAimPoint(target)
+    if not isvector(point) then return false, nil, "invalid-aim" end
+    local safe, ally = TraceShotLane(attacker, target, source, point, weapon)
+    if not safe then
+        local right = (point - source):Angle():Right()
+        local alternate
+        for _, offset in ipairs({48, -48, 76, -76, 104, -104}) do
+            local candidate = point + right * offset
+            local laneSafe = TraceShotLane(attacker, target, source, candidate, weapon)
+            if laneSafe then alternate = candidate break end
+        end
+        if not alternate then return false, ally, "ally-in-line" end
+        point = alternate
+    end
+    if IsExplosiveWeapon(weapon) then
+        local stored = isstring(weapon) and weapons and weapons.GetStored and weapons.GetStored(weapon) or nil
+        local definition = IsValidEntity(weapon) and weapon or stored
+        local primary = definition and istable(definition.Primary) and definition.Primary or {}
+        local radius = math.Clamp(tonumber(primary.BlastRadius) or tonumber(primary.ExplosionRadius)
+            or tonumber(primary.Radius) or 220, 96, 600)
+        for _, candidate in ipairs(ents.FindInSphere(point, radius)) do
+            if IsFriendlyActor(attacker, candidate) then
+                return false, candidate, "ally-in-blast-radius"
+            end
+        end
+    end
+    return true, nil, nil, point
+end
+
+function Actor.UpdateAim(attacker, target, weapon)
+    if not IsValidEntity(attacker) or not IsValidEntity(target) then return nil end
+    local point, body = Actor.GetTargetAimPoint(target)
+    if not isvector(point) then return nil end
+
+    local source = attacker.EyePos and attacker:EyePos() or attacker:WorldSpaceCenter()
+    local delta = point - source
+    local distance = delta:Length()
+    local ragdoll = IsRagdollEntity(body)
+    local velocity = GetTargetVelocity(target, body)
+    if not isvector(velocity) then velocity = vector_origin end
+
+    local leadTime = GetLeadTime(attacker, target, weapon, distance, ragdoll)
+    local lead = ClampVectorLength(velocity * leadTime, ragdoll and 24 or 96)
+    local predicted = point + lead
+    local safe, blockingAlly, safetyReason, alternatePoint = Actor.GetFriendlyFireStatus(attacker, target, weapon, predicted)
+    if alternatePoint then predicted = alternatePoint end
+    local direction = predicted - source
+    if direction:LengthSqr() < 1 then direction = attacker:GetForward() end
+    local aimAngle = direction:Angle()
+
+    -- A short residual recoil window slightly unsettles the next shot instead
+    -- of letting an NPC instantly snap back to a perfectly identical aim point.
+    local recoilRemaining = (tonumber(attacker.BZCNRecoilUntil) or 0) - CurTime()
+    if recoilRemaining > 0 then
+        local recoilScale = math.Clamp(recoilRemaining / 0.22, 0, 1)
+        aimAngle.p = aimAngle.p + math.Rand(-2.4, 2.4) * recoilScale
+        aimAngle.y = aimAngle.y + math.Rand(-2.8, 2.8) * recoilScale
+        direction = aimAngle:Forward()
+    end
+
+    -- Face the actual visible body, and expose sensible aim pose parameters for
+    -- Homigrad's NPC branch and the model animation layer.
+    attacker:SetAngles(Angle(0, aimAngle.y, 0))
+    local replicatedAim = Angle(aimAngle.p, aimAngle.y, 0)
+    if attacker.SetEyeAngles then pcall(attacker.SetEyeAngles, attacker, replicatedAim) end
+    -- Client TPIK cannot see the server-only BZCNCombatAimSolution table.
+    -- Replicate its angle briefly so the arm solver and displayed weapon keep
+    -- tracking between individual shots without leaving a stale aim forever.
+    if attacker.SetNW2Angle then attacker:SetNW2Angle("BZCNCombatAimAngle", replicatedAim) end
+    if attacker.SetNW2Float then attacker:SetNW2Float("BZCNCombatAimUntil", CurTime() + 0.35) end
+    if attacker.SetEyeTarget then pcall(attacker.SetEyeTarget, attacker, predicted) end
+    if attacker.SetPoseParameter then
+        pcall(attacker.SetPoseParameter, attacker, "aim_yaw", 0.5)
+        local normalizedPitch = math.Clamp((aimAngle.p + 88) / 138, 0, 1)
+        pcall(attacker.SetPoseParameter, attacker, "aim_pitch", normalizedPitch)
+    end
+
+    local profile = attacker.BZCNClassProfile or {}
+    local solution = {
+        target = target,
+        body = body,
+        source = source,
+        point = predicted,
+        rawPoint = point,
+        direction = direction:GetNormalized(),
+        angle = aimAngle,
+        distance = distance,
+        leadTime = leadTime,
+        downed = ragdoll or (target.GetNW2Bool and target:GetNW2Bool("BZCNNPCDowned", false))
+            or target.BZCNNPCDowned == true,
+        weaponClass = attacker.BZCN_SelectedWeapon or profile.WeaponClass,
+        friendlyFireSafe = safe,
+        friendlyFireBlocker = IsValidEntity(blockingAlly) and blockingAlly or nil,
+        friendlyFireReason = safetyReason
+    }
+    if attacker.SetNW2Bool then attacker:SetNW2Bool("BZCNFriendlyFireBlocked", not safe) end
+    if attacker.SetNW2Entity then attacker:SetNW2Entity("BZCNFriendlyFireBlocker", IsValidEntity(blockingAlly) and blockingAlly or NULL) end
+    attacker.BZCNCombatAimSolution = solution
+    Actor.ApplyWeaponAnimationPool(attacker, weapon, solution.weaponClass)
+    hook.Run("BZCN_CombatActorAimUpdated", attacker, target, solution)
+    return solution
+end
+
+function Actor.HasLineOfSight(attacker, target)
+    if not IsValidEntity(attacker) or not IsValidEntity(target) then return false end
+    local point, body = Actor.GetTargetAimPoint(target)
+    if not isvector(point) then return false end
+    local startPos = attacker.EyePos and attacker:EyePos() or attacker:WorldSpaceCenter()
+    local owner = Actor.ResolveTarget(target)
+    local filter = {attacker, owner}
+    if IsValidEntity(body) and body ~= owner then filter[#filter + 1] = body end
+    if IsValidEntity(attacker.BZCNHeldWeaponProxy) then filter[#filter + 1] = attacker.BZCNHeldWeaponProxy end
+    if IsValidEntity(owner and owner.BZCNHeldWeaponProxy) then filter[#filter + 1] = owner.BZCNHeldWeaponProxy end
+    local trace = util.TraceLine({start = startPos, endpos = point, filter = filter, mask = MASK_VISIBLE})
+    return not trace.Hit or trace.Fraction >= 0.999
+end
+
+function Actor.GetFireDelay(owner, weapon)
+    local profile = IsValidEntity(owner) and owner.BZCNClassProfile or {}
+    local weaponClass = IsValidEntity(weapon) and weapon:GetClass()
+        or (IsValidEntity(owner) and (owner.BZCN_SelectedWeapon
+            or (owner.BZCNClassProfile and owner.BZCNClassProfile.WeaponClass))) or ""
+    local stored = weaponClass ~= "" and weapons and weapons.GetStored
+        and weapons.GetStored(weaponClass) or nil
+    local primary = IsValidEntity(weapon) and istable(weapon.Primary) and weapon.Primary
+        or (istable(stored) and istable(stored.Primary) and stored.Primary) or {}
+    local configured = tonumber(primary.Wait) or tonumber(primary.Delay)
+    local base = configured and configured > 0 and configured
+        or tonumber(profile.AttackDelay) or 0.35
+    local hold = Actor.GetWeaponHoldType(owner, weapon, weaponClass)
+    local pistol = hold == "pistol" or string.find(string.lower(weaponClass), "glock", 1, true) ~= nil
+        or string.find(string.lower(weaponClass), "pistol", 1, true) ~= nil
+        or string.find(string.lower(weaponClass), "revolver", 1, true) ~= nil
+    local automatic = primary.Automatic == true or tonumber(primary.Automatic) == 1
+        or primary.AutoFire == true or (istable(stored) and stored.Automatic == true)
+        or (IsValidEntity(weapon) and weapon.Automatic == true)
+
+    -- NPCs share the weapon's actual fire mode and delay, but receive additional
+    -- recovery time for recoil. This prevents tiny SWEP.Wait values from turning
+    -- a semi-auto pistol into an almost automatic weapon against players.
+    if not automatic then
+        if IsValidEntity(owner) then owner.BZCNFireCadenceState = nil end
+        local delay = math.Clamp(math.max(base, pistol and 0.42 or 0.24) + math.Rand(0.05, 0.12), 0.29, 2.2)
+        if IsValidEntity(owner) then owner.BZCNRecoilUntil = CurTime() + delay + 0.12 end
+        return delay
+    end
+
+    -- Automatic weapons fire in short, imperfect bursts rather than maintaining
+    -- the SWEP's engine-rate limit indefinitely. The state belongs to each NPC,
+    -- not the shared weapon definition.
+    local state = IsValidEntity(owner) and owner.BZCNFireCadenceState or nil
+    if not istable(state) or state.weaponClass ~= weaponClass then
+        state = {weaponClass = weaponClass, shots = 0, burstLimit = math.random(3, 5)}
+    end
+    state.shots = (tonumber(state.shots) or 0) + 1
+    local delay = math.max(base, 0.12) + math.Rand(0.025, 0.07)
+    if state.shots >= (tonumber(state.burstLimit) or 4) then
+        delay = delay + math.Rand(0.22, 0.48)
+        state.shots = 0
+        state.burstLimit = math.random(3, 5)
+    end
+    if IsValidEntity(owner) then
+        owner.BZCNFireCadenceState = state
+        owner.BZCNRecoilUntil = CurTime() + math.Clamp(delay, 0.12, 1.8) + 0.12
+    end
+    return math.Clamp(delay, 0.12, 1.8)
+end
+
+-- Combat incapacity is not the same as being physically downed.
+-- Z-City players and our managed NPCs can remain conscious in fake-ragdoll,
+-- crawl, or near-death states and may still aim/fire with their arms.
+function Actor.IsIncapacitated(target)
+    if not IsValidEntity(target) or target:Health() <= 0 then return true end
+    if target.IsPlayer and target:IsPlayer() and target.Alive and not target:Alive() then return true end
+
+    -- Only explicit unconscious/dead/recovery-lock flags count here. In
+    -- particular, BZCNNPCDowned and generic "Downed" flags describe posture,
+    -- not whether the character can still fight.
+    local unconsciousFlags = {
+        "BZCNNPCUnconscious", "BZCNNPCIncapacitated",
+        "Unconscious", "IsUnconscious", "Incapacitated",
+        "IsIncapacitated", "KnockedOut", "IsKnockedOut",
+        "BZCNNPCGettingUpLocked"
+    }
+    for _, key in ipairs(unconsciousFlags) do
+        if target.GetNW2Bool and target:GetNW2Bool(key, false) then return true end
+        if target.GetNWBool and target:GetNWBool(key, false) then return true end
+    end
+
+    local state = target.BZCNNPCOrg or target.BZCN_Organism or target.organism
+    if istable(state) then
+        if state.dead == true or state.incapacitated == true or state.unconscious == true
+            or state.otrub == true or state.needotrub == true then
+            return true
+        end
+
+        -- Z-City organism consciousness is numeric; low health, blood loss,
+        -- pain, shock, or fake-ragdoll posture alone must not disable combat.
+        local consciousness = tonumber(state.consciousness)
+        if consciousness and consciousness <= 0.05 then return true end
+    end
+
+    local support = hg and hg.BZCNNPCSupport
+    if support then
+        for _, method in ipairs({"IsUnconscious", "IsIncapacitated"}) do
+            if isfunction(support[method]) then
+                local ok, result = pcall(support[method], target)
+                if ok and result == true then return true end
+            end
+        end
+    end
+
+    return false
+end
+
+function Actor.CanFire(owner, weapon)
+    if not IsValidEntity(owner) then return false end
+    if not IsValidEntity(weapon) then return true end
+    local now = CurTime()
+    if (tonumber(weapon.BZCNReloadUntil) or 0) > now then return false end
+    if (tonumber(weapon.BZCNNextFire) or 0) > now then return false end
+    if weapon.GetNextPrimaryFire and weapon:GetNextPrimaryFire() > now then return false end
+
+    local primary = istable(weapon.Primary) and weapon.Primary or {}
+    local clipSize = tonumber(primary.ClipSize) or 0
+    if weapon.GetMaxClip1 then
+        local maxClip = tonumber(weapon:GetMaxClip1())
+        if maxClip and maxClip > 0 then clipSize = maxClip end
+    end
+    if clipSize > 0 and weapon.Clip1 and weapon:Clip1() <= 0 then return false end
+    return true
+end
+
+function Actor.ClearAim(owner)
+    if IsValidEntity(owner) then owner.BZCNCombatAimSolution = nil end
+end
