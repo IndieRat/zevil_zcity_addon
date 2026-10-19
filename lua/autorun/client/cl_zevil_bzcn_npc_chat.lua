@@ -2,6 +2,7 @@
 if not CLIENT then return end
 
 BZCN = BZCN or {}
+if not BZCN.ZevilVendoredAPI then return end
 
 local FACTION_COLORS = {
     civilian = Color(230, 205, 160),
