@@ -160,7 +160,7 @@ hook.Add("PlayerSpawn", "ZevilRestoreAfterSpawn", function(ply)
     timer.Simple(0.5, function() if IsValid(ply) then replicate(ply) end end)
 end)
 
-hook.Add("Think", "ZevilVirusThink", function()
+timer.Create("ZevilVirusThink", 1, 0, function()
     if not enabled() then return end
     local now = CurTime()
     for _, ent in ipairs(ents.GetAll()) do
@@ -168,7 +168,7 @@ hook.Add("Think", "ZevilVirusThink", function()
         local v = ent.ZevilVirus
         if not istable(v) then continue end
         if not v.Infected then
-            local decay = cv.zevil_exposure_decay:GetFloat() * FrameTime()
+            local decay = cv.zevil_exposure_decay:GetFloat()
             v.Exposure = math.max((v.Exposure or 0) - decay, 0)
             if v.Exposure <= 0 then ent.ZevilVirus = nil end
             continue
