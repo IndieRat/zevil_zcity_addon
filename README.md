@@ -22,7 +22,7 @@ Zevil is an addon, not a fork of Z-City. Its custom virus state lives in `ent.Ze
 - Companion BZCN bridges for managed-NPC data flow, AI intent tracking, weapon-aware targeting, runtime SWEP equipping/firing and melee, medical-item handling, inventory/loot compatibility, presentation, HUD, accessories, TPIK/weapon poses, chat, and blood effects.
 - API integration profiles for the custom infection faction and Leon-inspired rookie-cop survivor.
 - Infection persistence across player death/respawn; curing clears only Zevil state.
-- The infection adapter intentionally does not call `BZCN.ApplyClass` for infected NextBots, avoiding automatic `IsOrganism` flags when the optional native organism-support module is absent.
+- Infected NextBots use the registered BZCN `ZevilInfected` class application for its zombie-style material/bodygroup treatment and class metadata, while retaining the randomized civilian model. `hg.BZCNNPCSupport.Attach` is then the supported entry point that initializes the native Z-City organism and injury lifecycle when available.
 - The vendored API only advertises a native organism-backed NPC when `hg.BZCNNPCSupport.Attach` is available; otherwise managed NPCs use the API's safe netvar/identity bridge without creating a fake Z-City organism.
 - Z-City organism internals are not directly modified.
 
