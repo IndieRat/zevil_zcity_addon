@@ -24,6 +24,18 @@ local strength = GetConVar("zevil_fake_infected_strength") or CreateConVar(
 )
 
 local active = setmetatable({}, {__mode = "k"})
+
+-- Public body resolver for integrations which need the currently rendered body.
+-- For ordinary standing infected this is our shadow puppet; while BZCN has the
+-- infected downed, it is BZCN's physical recovery ragdoll; otherwise it is ent.
+function Fake.GetVisibleBody(ent)
+    if not IsValid(ent) then return nil end
+    local body = ent.GetNW2Entity and ent:GetNW2Entity("ZevilVisibleBody") or nil
+    if IsValid(body) then return body end
+    if IsValid(ent.ZevilFakePuppet) then return ent.ZevilFakePuppet end
+    if IsValid(ent.BZCNNPCRagdoll) then return ent.BZCNNPCRagdoll end
+    return ent
+end
 local function IsInfectedBot(ent)
     return IsValid(ent) and ent:GetClass() == "npc_zevil_infected"
 end
@@ -119,6 +131,10 @@ local function SuspendPuppetForZCityDowned(host, puppet)
     -- Never show our upright shadow puppet alongside that physical body.
     host:SetNoDraw(true)
     host:DrawShadow(false)
+    local nativeBody = host.BZCNNPCRagdoll
+    if host.SetNW2Entity then
+        host:SetNW2Entity("ZevilVisibleBody", IsValid(nativeBody) and nativeBody or NULL)
+    end
     host.ZevilFakeUsingZCityDowned = true
 end
 
@@ -129,8 +145,10 @@ function Fake.Detach(host, keepCorpse)
     active[host] = nil
     host.ZevilFakePuppet = nil
 
+    if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", NULL) end
     if IsValid(rag) then
         rag.ZevilPuppetOwner = nil
+        if rag.SetNW2Entity then rag:SetNW2Entity("ZevilPuppetOwner", NULL) end
         rag:SetNW2Bool("ZevilFakePuppet", false)
         if not keepCorpse then SafeRemoveEntity(rag) end
     end
@@ -178,10 +196,12 @@ function Fake.Attach(host, forceRefresh)
     rag:SetNW2Bool("ZevilFakePuppet", true)
     rag:SetNW2Int("ZevilStage", host:GetNW2Int("ZevilStage", 2))
     rag.ZevilPuppetOwner = host
+    if rag.SetNW2Entity then rag:SetNW2Entity("ZevilPuppetOwner", host) end
     rag.ZevilPuppetConstraint = constraint.NoCollide(host, rag, 0, 0)
     MirrorZCityWounds(host, rag, true)
 
     host.ZevilFakePuppet = rag
+    if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", rag) end
     host:SetNoDraw(true)
     host:DrawShadow(false)
     active[host] = rag
@@ -538,6 +558,7 @@ hook.Add("Think", "Zevil_FakeInfected_ResumeAfterZCityRecovery", function()
         if host.BZCNNPCDowned or IsValid(host.BZCNNPCRagdoll) then continue end
 
         host.ZevilFakeUsingZCityDowned = nil
+        if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", NULL) end
         host:SetNoDraw(false)
         host:DrawShadow(true)
         QueueAttach(host, true)
