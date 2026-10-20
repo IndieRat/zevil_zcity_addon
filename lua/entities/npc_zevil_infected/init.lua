@@ -318,19 +318,23 @@ end
 
 function ENT:Initialize()
     self:SetModel(GetInfectedModel(self.ZevilModel))
-    self:SetHealth(100)
-    self:SetMaxHealth(100)
+    self:SetHealth(125)
+    self:SetMaxHealth(125)
     self:SetSolid(SOLID_BBOX)
     self:SetCollisionGroup(COLLISION_GROUP_NPC)
     self:SetColor(Color(132, 145, 112, 255)) -- sickly, desaturated infected skin
     self:SetCollisionBounds(Vector(-13, -13, 0), Vector(13, 13, 72))
-    self.loco:SetDesiredSpeed(95)
-    self.loco:SetAcceleration(500)
-    self.loco:SetDeceleration(700)
+    -- Infected are unarmed: combat is exclusively the built-in bite/fist-like
+    -- attack, never a generated SWEP or inventory weapon. Their sprint is faster
+    -- than a healthy human but remains under path-controller control.
+    self.ZevilBaseRunSpeed = 150
+    self.loco:SetDesiredSpeed(self.ZevilBaseRunSpeed)
+    self.loco:SetAcceleration(900)
+    self.loco:SetDeceleration(850)
     self.loco:SetStepHeight(18)
     self.loco:SetJumpHeight(35)
     self.ZevilInfectedAttacker = true
-    self.ZevilVirus = {Infected = true, Stage = 2, Exposure = 100, InfectedAt = CurTime(), NextStage = CurTime() + 120}
+    self.ZevilVirus = {Infected = true, Stage = 2, Exposure = 100, InfectedAt = CurTime(), NextStage = CurTime() + 120, NextRegen = CurTime()}
     self:SetNW2Bool("ZevilInfected", true)
     self:SetNW2Int("ZevilStage", 2)
 
@@ -426,7 +430,7 @@ function ENT:Feed(corpse)
     end
     if IsValid(self) then
         self.ZevilFeeding = false
-        self.loco:SetDesiredSpeed(95)
+        self.loco:SetDesiredSpeed(self.ZevilBaseRunSpeed or 150)
     end
     return true
 end
@@ -445,7 +449,7 @@ function ENT:RunBehaviour()
             self:SetZevilLocomotionActivity(critical and ACT_WALK or ACT_RUN)
             -- Critically injured infected drag themselves forward in the procedural
             -- crawl pose rather than sprinting upright with a broken-body silhouette.
-            self.loco:SetDesiredSpeed(critical and 34 or (95 + (self.ZevilVirus.Stage or 2) * 7))
+            self.loco:SetDesiredSpeed(critical and 42 or (self.ZevilBaseRunSpeed or 150))
             if self:CanSeeTarget(target) then
                 self:ChaseTarget(target)
             else
@@ -499,6 +503,15 @@ function ENT:OnInjured(dmg)
 end
 
 function ENT:OnKilled(dmg)
+    -- Death terminates the active infection before the organism/corpse is detached.
+    if isfunction(Zevil and Zevil.Cure) then
+        Zevil.Cure(self)
+    else
+        self.ZevilVirus = nil
+        self:SetNW2Bool("ZevilInfected", false)
+        self:SetNW2Int("ZevilStage", 0)
+    end
+
     -- Keep the live procedural puppet as the corpse so death does not pop into
     -- a second, default-pose ragdoll. The controller detaches it from the AI.
     local rag
