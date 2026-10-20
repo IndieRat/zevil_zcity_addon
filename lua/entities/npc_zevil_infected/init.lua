@@ -129,6 +129,12 @@ function ENT:SetZevilActivity(activity)
     self:StartActivity(activity)
 end
 
+-- Keep NextBot locomotion pose parameters synchronized with path movement.
+-- This prevents newly converted player-model bots from animating sideways.
+function ENT:BodyUpdate()
+    self:BodyMoveXY()
+end
+
 function ENT:Initialize()
     self:SetModel(GetInfectedModel(self.ZevilModel))
     self:SetHealth(100)
