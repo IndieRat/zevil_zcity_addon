@@ -49,10 +49,16 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
     local function attempt(count)
         if not IsValid(ent) then return end
         local support = hg and hg.BZCNNPCSupport
-        if support and isfunction(support.Attach) then
-            -- Support.Attach is the BZCN-supported entry point: it ensures the
-            -- organism registry is valid, attaches native Z-City wounds when
-            -- available, and otherwise keeps the support module's safe fallback.
+        local organismAPI = hg and hg.organism
+        local nativeAPIReady = istable(organismAPI)
+            and istable(organismAPI.list)
+            and isfunction(organismAPI.Add)
+            and isfunction(organismAPI.Clear)
+
+        -- Do not invoke BZCN's fallback attachment until Z-City's own Add/Clear
+        -- lifecycle is registered. Some BZCN fallback modes expose a compatible
+        -- organism-shaped table without registering it in hg.organism.list.
+        if support and isfunction(support.Attach) and nativeAPIReady then
             local ok, state = pcall(support.Attach, ent)
             if ok and istable(state) then
                 ent.ZevilZCitySupportAttached = true
@@ -63,33 +69,31 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                     ent.ZevilZCitySupportWarned = nil
                     return
                 end
-
-                -- BZCN.ApplyClass can optimistically set these flags when its
-                -- support module exists; clear them until the native organism is
-                -- actually registered so third-party hooks never see a false positive.
-                ent.IsOrganism = nil
-                ent.hg_organism = nil
-
-                -- Attach may create its safe fallback before Z-City's organism
-                -- API finishes loading. Retry so the tracked state can upgrade
-                -- to the real native organism/wound lifecycle.
             elseif not ok and not ent.ZevilZCitySupportWarned then
                 ent.ZevilZCitySupportWarned = true
                 ErrorNoHalt("[Zevil] Z-City NPC injury attachment failed for "
                     .. tostring(ent:GetClass()) .. ": " .. tostring(state) .. "\n")
             end
+        end
 
-            -- Autorun order differs across collections. Retry until both the
-            -- support module and native organism Add/Clear registry are ready.
-            if count < 40 then
-                timer.Simple(0.5, function()
-                    if IsValid(ent) then attempt(count + 1) end
-                end)
-            elseif not ent.ZevilZCitySupportNative and not ent.ZevilZCitySupportWarned then
-                ent.ZevilZCitySupportWarned = true
-                print("[Zevil] Native Z-City NPC injury support is unavailable; "
-                    .. tostring(ent:GetClass()) .. " will use its standalone behavior.")
-            end
+        -- BZCN.ApplyClass may optimistically set these flags when only its
+        -- adapter is loaded. Clear them until a native organism is registered.
+        if not nativeAPIReady or ent.ZevilZCitySupportNative ~= true then
+            ent.IsOrganism = nil
+            ent.hg_organism = nil
+        end
+
+        -- Autorun order differs across collections; retry until the BZCN
+        -- injury bridge and native Z-City organism registry are both ready.
+        if count < 40 then
+            timer.Simple(0.5, function()
+                if IsValid(ent) then attempt(count + 1) end
+            end)
+        elseif not ent.ZevilZCitySupportNative and not ent.ZevilZCitySupportWarned then
+            ent.ZevilZCitySupportWarned = true
+            print("[Zevil] Native Z-City NPC injury support is unavailable; "
+                .. tostring(ent:GetClass()) .. " will use its standalone behavior.")
+        end
     end
 
     attempt(0)
