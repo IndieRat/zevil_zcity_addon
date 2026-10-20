@@ -134,7 +134,7 @@ local function ApplyInfectedPose(name, angle, time, phase, movement, amount, cra
     -- Drive both sides from a shared clock but half a cycle apart. This avoids
     -- a mirrored/stiff "march" and gives the legs and opposite arms a real gait.
     local speed = math.max(movement, 0)
-    local run = math.Clamp((speed - 105) / 100, 0, 1)
+    local run = math.Clamp((speed - 70) / 50, 0, 1)
     local moving = math.Clamp((speed - 7) / 55, 0, 1)
     local cadence = math.Clamp(2.7 + speed * 0.038, 2.7, 10.5)
     local cycle = time * cadence + phase + sidePhase
