@@ -9,8 +9,10 @@ Zevil is an addon, not a fork of Z-City. Its custom virus state lives in `ent.Ze
 - Independent exposure meter and staged infection lifecycle for players and NPCs.
 - Bite-based transmission, configurable incubation/progression, and server commands.
 - Player visual mutation overlay with sickly tint, staged material/bone deformation, and infection HUD.
-- Spawnable Zevil infected NextBot with explicit NPC/Entities spawn-menu registration, valid mounted-model fallback, target acquisition, pursuit, bite attacks, wandering, corpse-feeding, sickly coloration, mouth-blood visuals, and occasional lunges.
-- Procedural infected fake-ragdoll puppets: AI/pathfinding remains on the NextBot while a separate physics ragdoll tracks its animation through soft shadow control, with an uneven slouch, head sway, and asymmetric arms/legs. Converted human NPCs and manually spawned infected use the same controller; the active puppet becomes the corpse on death instead of popping into a second default-pose ragdoll. Models without the required ValveBiped bones or usable physics fall back to their normal rendering.
+- Spawnable Zevil infected NextBot with explicit NPC/Entities spawn-menu registration, randomized civilian player models, target acquisition, pursuit, bite attacks, wandering, corpse-feeding, sickly coloration, Z-City blood-particle mouth seep, and occasional lunges.
+- Spawnable Zevil civilian survivor NextBot (**NPCs → Zevil - Survivors**) with randomized Group 01/03 civilian models, wandering, and panic-running away from Zevil infected; fully infected civilians convert into infected NPCs.
+- Procedural infected fake-ragdoll puppets: AI/pathfinding remains on the NextBot while a separate physics ragdoll tracks its animation through soft shadow control, with an uneven slouch, head sway, asymmetric arms/legs, and a lowered crawling posture for critically injured infected. Standing/walking/running inherit the source model's activity while procedural pose offsets add motion. Converted human NPCs and manually spawned infected use the same controller; the active puppet becomes the corpse on death instead of popping into a second default-pose ragdoll. Models without the required ValveBiped bones or usable physics fall back to their normal rendering.
+- When Z-City's `hg_bloodimpact` particle network message is available, infected puppets emit a low-rate false mouth bleed using Z-City's own blood-particle simulation. This is visual-only and does not create a fake `organism` table or Z-City wounds for NextBots.
 - Single-use `weapon_zevil_virus_syringe` SWEP in **Weapons → Zevil - Biohazard**. Primary attack injects the wielder; secondary attack injects a living target at close range. Human NPCs convert into infected AI through the virus lifecycle.
 - Fully infected human NPCs are converted into roaming infected while preserving their model, skin, bodygroups, position, and approximate health.
 - Infected players retain their player model and control; from stage 3 onward, `zevil_bite` lets them attack nearby targets.
@@ -36,7 +38,7 @@ Copy this repository into `garrysmod/addons/zevil_zcity_addon`, restart the serv
 - `zevil_status` — report infected/exposed counts.
 - `zevil_bite` — bite a nearby target while infected at stage 3 or higher.
 
-Spawn **NPCs → Zevil - Resident Evil → Zevil Infected**, or use the scripted entity under **Entities → Zevil - Resident Evil**. Admins can also use `zevil_spawn_infected`. For injection, spawn **Weapons → Zevil - Biohazard → Zevil Virus Syringe**, or run `zevil_give_syringe` as an in-game admin; **LMB injects yourself and RMB injects a nearby person/NPC**. The syringe is consumed after a successful injection. Spawn `npc_zevil_rookiecop` when Better Z-City NPCs is installed.
+Spawn **NPCs → Zevil - Resident Evil → Zevil Infected**, **NPCs → Zevil - Survivors → Zevil Civilian**, or use the infected scripted entity under **Entities → Zevil - Resident Evil**. Admins can also use `zevil_spawn_infected`. For injection, spawn **Weapons → Zevil - Biohazard → Zevil Virus Syringe**, or run `zevil_give_syringe` as an in-game admin; **LMB injects yourself and RMB injects a nearby person/NPC**. The syringe is consumed after a successful injection. Spawn `npc_zevil_rookiecop` when Better Z-City NPCs is installed.
 
 ## Main server convars
 
