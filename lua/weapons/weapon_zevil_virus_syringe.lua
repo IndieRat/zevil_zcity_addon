@@ -67,7 +67,7 @@ end
 
 function SWEP:CanInject()
     local owner = self:GetOwner()
-    if not IsValid(owner) or not owner:IsPlayer() or not owner:Alive() then return false end
+    if not IsValid(owner) or not owner:IsPlayer() or not owner:Alive() or self.ZevilSpent then return false end
     if (self.ZevilNextInjection or 0) > CurTime() then return false end
     self.ZevilNextInjection = CurTime() + INJECTION_COOLDOWN
     self:SetNextPrimaryFire(CurTime() + INJECTION_COOLDOWN)
@@ -120,12 +120,15 @@ function SWEP:Inject(target, owner)
     end
 
     hook.Run("Zevil_VirusInjected", target, owner)
-    self:SendWeaponAnim(ACT_VM_PRIMARYATTACK)
+    self.ZevilSpent = true
+    if isfunction(self.SetHolding) then self:SetHolding(100) end
 
-    -- Consume the single-use syringe only after a successful injection.
-    owner:SelectWeapon("weapon_hands_sh")
-    timer.Simple(0, function()
-        if IsValid(owner) then owner:StripWeapon("weapon_zevil_virus_syringe") end
+    -- Leave the syringe in hand briefly so Z-City's arm pose can play, then
+    -- consume it and return the player to hands.
+    timer.Simple(0.65, function()
+        if not IsValid(owner) then return end
+        owner:SelectWeapon("weapon_hands_sh")
+        owner:StripWeapon("weapon_zevil_virus_syringe")
     end)
 end
 
