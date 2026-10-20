@@ -64,11 +64,9 @@ function Fake.Detach(host, keepCorpse)
     local rag = host.ZevilFakePuppet or active[host]
     active[host] = nil
     host.ZevilFakePuppet = nil
-    host:SetNW2Entity("ZevilFakePuppet", NULL)
 
     if IsValid(rag) then
         rag.ZevilPuppetOwner = nil
-        rag:SetNW2Entity("ZevilPuppetOwner", NULL)
         rag:SetNW2Bool("ZevilFakePuppet", false)
         if not keepCorpse then SafeRemoveEntity(rag) end
     end
@@ -115,12 +113,10 @@ function Fake.Attach(host, forceRefresh)
     rag:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
     rag:SetNW2Bool("ZevilFakePuppet", true)
     rag:SetNW2Int("ZevilStage", host:GetNW2Int("ZevilStage", 2))
-    rag:SetNW2Entity("ZevilPuppetOwner", host)
     rag.ZevilPuppetOwner = host
     rag.ZevilPuppetConstraint = constraint.NoCollide(host, rag, 0, 0)
 
     host.ZevilFakePuppet = rag
-    host:SetNW2Entity("ZevilFakePuppet", rag)
     host:SetNoDraw(true)
     host:DrawShadow(false)
     active[host] = rag
@@ -274,6 +270,27 @@ hook.Add("Think", "Zevil_FakeInfected_Control", function()
         host.ZevilFakeNextControl = now + interval
         ControlPuppet(host, rag, now)
     end
+end)
+
+hook.Add("EntityTakeDamage", "Zevil_FakeInfected_DamageBridge", function(target, damage)
+    local owner = target.ZevilPuppetOwner
+    if not IsValid(owner) or owner.ZevilFakePuppet ~= target
+        or owner.ZevilFakeForwardingDamage then return end
+
+    -- The puppet is the visible, physically traceable body. Forward its damage
+    -- to the AI owner so bullets and melee still affect the infected.
+    local forwarded = DamageInfo()
+    forwarded:SetDamage(damage:GetDamage())
+    forwarded:SetDamageType(damage:GetDamageType())
+    forwarded:SetAttacker(damage:GetAttacker())
+    forwarded:SetInflictor(damage:GetInflictor())
+    forwarded:SetDamagePosition(damage:GetDamagePosition())
+    forwarded:SetDamageForce(damage:GetDamageForce())
+
+    owner.ZevilFakeForwardingDamage = true
+    owner:TakeDamageInfo(forwarded)
+    owner.ZevilFakeForwardingDamage = nil
+    damage:SetDamage(0)
 end)
 
 hook.Add("EntityRemoved", "Zevil_FakeInfected_Cleanup", function(ent)
