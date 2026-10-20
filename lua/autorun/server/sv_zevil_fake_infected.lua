@@ -101,6 +101,72 @@ local function CopyAppearance(source, rag)
     end
 end
 
+-- Make Z-City's native wound renderer resolve the hidden NextBot and
+-- route the living host's wound NetVars to the actual visible puppet. Merely
+-- setting rag.ply is insufficient: hg.RagdollOwner also checks that the owner
+-- points back to this exact entity via GetNWEntity("FakeRagdoll").
+local function LinkZCityFakeRagdoll(host, rag)
+    if not IsValid(host) or not IsValid(rag) then return false end
+
+    rag.ply = host
+    rag.BZCNNPCOwner = host
+    if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", host) end
+    if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "ply", host) end
+
+    local previousNW = host.GetNWEntity and host:GetNWEntity("FakeRagdoll") or NULL
+    local previousNW2 = host.GetNW2Entity and host:GetNW2Entity("FakeRagdoll") or NULL
+    local previousField = host.FakeRagdoll
+
+    -- A genuine BZCN knockdown ragdoll already owns the native link. Never steal
+    -- it; the puppet is removed while that body is active.
+    if (IsValid(previousNW) and previousNW ~= rag)
+        or (IsValid(previousNW2) and previousNW2 ~= rag)
+        or (IsValid(previousField) and previousField ~= rag) then
+        return false
+    end
+
+    if not host.ZevilFakeRagdollLinkSaved then
+        host.ZevilFakeRagdollLinkSaved = true
+        host.ZevilFakeRagdollPreviousNW = previousNW
+        host.ZevilFakeRagdollPreviousNW2 = previousNW2
+        host.ZevilFakeRagdollPreviousField = previousField
+    end
+
+    host.FakeRagdoll = rag
+    if host.SetNWEntity then pcall(host.SetNWEntity, host, "FakeRagdoll", rag) end
+    if host.SetNW2Entity then pcall(host.SetNW2Entity, host, "FakeRagdoll", rag) end
+    return true
+end
+
+local function UnlinkZCityFakeRagdoll(host, rag)
+    if IsValid(rag) then
+        rag.ply = nil
+        if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", NULL) end
+        if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "ply", NULL) end
+    end
+    if not IsValid(host) or not host.ZevilFakeRagdollLinkSaved then return end
+
+    local ownsLink = host.FakeRagdoll == rag
+        or (host.GetNWEntity and host:GetNWEntity("FakeRagdoll") == rag)
+        or (host.GetNW2Entity and host:GetNW2Entity("FakeRagdoll") == rag)
+    if ownsLink then
+        local previousNW = host.ZevilFakeRagdollPreviousNW
+        local previousNW2 = host.ZevilFakeRagdollPreviousNW2
+        host.FakeRagdoll = host.ZevilFakeRagdollPreviousField
+        if host.SetNWEntity then
+            pcall(host.SetNWEntity, host, "FakeRagdoll", IsValid(previousNW) and previousNW or NULL)
+        end
+        if host.SetNW2Entity then
+            pcall(host.SetNW2Entity, host, "FakeRagdoll", IsValid(previousNW2) and previousNW2 or NULL)
+        end
+    end
+
+    host.ZevilFakeRagdollLinkSaved = nil
+    host.ZevilFakeRagdollPreviousNW = nil
+    host.ZevilFakeRagdollPreviousNW2 = nil
+    host.ZevilFakeRagdollPreviousField = nil
+end
+
 local function MirrorZCityWounds(host, rag, force)
     if not IsValid(host) or not IsValid(rag) then return end
     local org = host.organism or host.BZCN_Organism
@@ -178,6 +244,7 @@ end
 
 local function SuspendPuppetForZCityDowned(host, puppet)
     active[host] = nil
+    UnlinkZCityFakeRagdoll(host, puppet)
     host.ZevilFakePuppet = nil
     if IsValid(puppet) then
         puppet.ZevilPuppetOwner = nil
@@ -201,6 +268,7 @@ function Fake.Detach(host, keepCorpse)
 
     local rag = host.ZevilFakePuppet or active[host]
     active[host] = nil
+    UnlinkZCityFakeRagdoll(host, rag)
     host.ZevilFakePuppet = nil
 
     if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", NULL) end
@@ -260,6 +328,8 @@ function Fake.Attach(host, forceRefresh)
 
     host.ZevilFakePuppet = rag
     if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", rag) end
+    LinkZCityFakeRagdoll(host, rag)
+    MirrorZCityWounds(host, rag, true)
     host:SetNoDraw(true)
     host:DrawShadow(false)
     active[host] = rag
@@ -647,6 +717,7 @@ end)
 hook.Add("EntityRemoved", "Zevil_FakeInfected_Cleanup", function(ent)
     if ent.ZevilFakePuppet then
         local rag = ent.ZevilFakePuppet
+        UnlinkZCityFakeRagdoll(ent, rag)
         active[ent] = nil
         ent.ZevilFakePuppet = nil
         if IsValid(rag) and rag.ZevilPuppetOwner == ent then
