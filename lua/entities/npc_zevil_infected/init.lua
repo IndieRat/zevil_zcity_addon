@@ -3,11 +3,50 @@ AddCSLuaFile("cl_init.lua")
 include("shared.lua")
 
 local MODELS = {
+    -- Prefer the Z-City infected model, then common mounted zombie player models.
+    "models/zcity/player/zombie_classic.mdl",
     "models/player/zombie_classic.mdl",
     "models/player/zombie_fast.mdl",
     "models/player/group03/male_07.mdl",
     "models/player/group03/female_07.mdl"
 }
+
+local function GetInfectedModel(requested)
+    if isstring(requested) and requested ~= "" and util.IsValidModel(requested) then
+        return requested
+    end
+    for _, model in ipairs(MODELS) do
+        if util.IsValidModel(model) then return model end
+    end
+    return "models/player/group03/male_07.mdl"
+end
+
+local function CountZevilInfected()
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_zevil_infected")) do
+        if IsValid(ent) then count = count + 1 end
+    end
+    return count
+end
+
+function ENT:SpawnFunction(ply, trace, className)
+    if not trace or not trace.Hit then return end
+    local limit = GetConVar("zevil_max_infected")
+    if limit and CountZevilInfected() >= limit:GetInt() then
+        if IsValid(ply) and ply:IsPlayer() then
+            ply:ChatPrint("[Zevil] Infected NPC limit reached. Increase zevil_max_infected to spawn more.")
+        end
+        return
+    end
+
+    local zombie = ents.Create(className or "npc_zevil_infected")
+    if not IsValid(zombie) then return end
+    zombie:SetPos(trace.HitPos + trace.HitNormal * 8)
+    zombie:SetAngles(Angle(0, IsValid(ply) and ply:EyeAngles().y or 0, 0))
+    zombie:Spawn()
+    zombie:Activate()
+    return zombie
+end
 local function isAliveTarget(ent)
     return IsValid(ent) and ent ~= NULL and ent:Health() > 0
         and (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot())
@@ -50,7 +89,7 @@ local function SetupBZCNCompatibility(self)
 end
 
 function ENT:Initialize()
-    self:SetModel(self.ZevilModel or MODELS[math.random(#MODELS)])
+    self:SetModel(GetInfectedModel(self.ZevilModel))
     self:SetHealth(100)
     self:SetMaxHealth(100)
     self:SetSolid(SOLID_BBOX)
