@@ -337,9 +337,14 @@ function ENT:Initialize()
     -- Use Z-City's appearance catalogue, including configured/custom player
     -- models and clothing, before applying the registered zombie-style profile.
     -- Models without the required ValveBiped skeleton fall back safely.
-    if not ApplyHGInfectedAppearance(self) then
+    local usedHGAppearance = ApplyHGInfectedAppearance(self)
+    if not usedHGAppearance then
         RandomizeInfectedFallbackAppearance(self)
     end
+    self.ZevilHGAppearance = usedHGAppearance == true
+    self:SetNW2Bool("ZevilHGAppearance", self.ZevilHGAppearance)
+    self:SetNW2String("ZevilAppearanceModel", self:GetModel())
+
     SetupBZCNCompatibility(self)
 
     if Zevil and isfunction(Zevil.AttachZCityNPCSupport) then
