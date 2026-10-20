@@ -9,8 +9,8 @@ Zevil = Zevil or {}
 Zevil.Config = Zevil.Config or {}
 local Z = Zevil
 local cv = {}
-local function convar(name, default, help)
-    cv[name] = CreateConVar(name, tostring(default), FCVAR_ARCHIVE, help)
+local function convar(name, default, help, flags)
+    cv[name] = CreateConVar(name, tostring(default), flags or FCVAR_ARCHIVE, help)
     return cv[name]
 end
 
@@ -19,8 +19,9 @@ convar("zevil_transmission", 1, "Allow infection transmission")
 convar("zevil_incubation", 90, "Seconds before exposed hosts become symptomatic")
 convar("zevil_progression", 120, "Seconds between mutation stages")
 convar("zevil_bite_infect_chance", 0.35, "Probability that an infected bite infects a victim")
-convar("zevil_player_visuals", 1, "Enable clientside infected player mutation visuals")
-convar("zevil_mutation_strength", 1, "Visual mutation intensity")
+-- Replicate visual settings so client draw hooks can actually read them.
+convar("zevil_player_visuals", 1, "Enable clientside infected player mutation visuals", bit.bor(FCVAR_ARCHIVE, FCVAR_REPLICATED))
+convar("zevil_mutation_strength", 1, "Visual mutation intensity", bit.bor(FCVAR_ARCHIVE, FCVAR_REPLICATED))
 convar("zevil_max_infected", 24, "Maximum Zevil infected NPCs")
 convar("zevil_exposure_decay", 0.25, "Exposure removed per second when not exposed")
 
@@ -128,9 +129,31 @@ end
 hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
     if not enabled() or not isHumanNPC(host) or host:GetClass() == "npc_zevil_infected" then return end
     local old = host
-    local pos, ang = old:GetPos(), old:GetAngles()
-    local hp, maxhp = math.max(old:Health(), 1), math.max(old:GetMaxHealth(), 1)
+    local pos = old:GetPos()
     local velocity = old:GetVelocity()
+
+    -- Source NPCs can have stale body yaw while turning or strafing. Prefer the
+    -- current enemy or infector direction, then movement direction, so the
+    -- replacement player-model NextBot doesn't inherit a sideways body heading.
+    local facingTarget
+    if isfunction(old.GetEnemy) then
+        local enemy = old:GetEnemy()
+        if IsValid(enemy) and enemy ~= old then facingTarget = enemy end
+    end
+    if not IsValid(facingTarget) and IsValid(source) and source ~= old then
+        facingTarget = source
+    end
+
+    local yaw = old:GetAngles().y
+    if IsValid(facingTarget) then
+        local direction = facingTarget:WorldSpaceCenter() - old:WorldSpaceCenter()
+        direction.z = 0
+        if direction:LengthSqr() > 16 then yaw = direction:Angle().y end
+    elseif velocity:Length2DSqr() > 900 then
+        yaw = velocity:Angle().y
+    end
+    local ang = Angle(0, yaw, 0)
+    local hp, maxhp = math.max(old:Health(), 1), math.max(old:GetMaxHealth(), 1)
     local formerName = isfunction(old.Nick) and old:Nick() or (isfunction(old.GetName) and old:GetName() or "")
     local infected = table.Copy(old.ZevilVirus or {})
     local zombie = ents.Create("npc_zevil_infected")
@@ -144,6 +167,9 @@ hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
     zombie:Spawn()
     zombie:Activate()
     if not IsValid(zombie) then return end
+    -- Restore the resolved yaw after initialization; BodyUpdate then maintains
+    -- movement pose parameters on the new player-model NextBot.
+    zombie:SetAngles(ang)
     -- The infected entity selects a random civilian player model during
     -- Initialize; do not overwrite it with Combine/zombie/special NPC models.
     zombie:SetMaxHealth(maxhp)
@@ -183,6 +209,37 @@ hook.Add("EntityTakeDamage", "ZevilPlayerExposureFromInfected", function(target,
     if attacker.ZevilInfectedAttacker then Z.Expose(target, 25, attacker) end
 end)
 
+hook.Add("Zevil_Infected", "Zevil_PlayerConversionFeedback", function(ent)
+    if not IsValid(ent) or not ent:IsPlayer() then return end
+    ent:ChatPrint("[Zevil] Infection established. Visible symptoms will worsen over time.")
+    ent:ChatPrint("[Zevil] At stage 3, use the console command zevil_bite to infect nearby targets.")
+end)
+
+hook.Add("Zevil_StageChanged", "Zevil_PlayerStageFeedback", function(ent, stage)
+    if not IsValid(ent) or not ent:IsPlayer() then return end
+    local messages = {
+        [2] = "[Zevil] Stage 2: visible decay and infected vocalizations have begun.",
+        [3] = "[Zevil] Stage 3: the infection is damaging you. Bite nearby targets with zevil_bite.",
+        [4] = "[Zevil] Stage 4: motor control is degrading; movement is impaired.",
+        [5] = "[Zevil] Stage 5: terminal infection. Your movement is heavily impaired."
+    }
+    if messages[stage] then ent:ChatPrint(messages[stage]) end
+end)
+
+-- Apply stage penalties to the movement command rather than persistent player
+-- speed settings, so a cure restores ordinary movement without cleanup races.
+hook.Add("SetupMove", "Zevil_InfectedPlayerMovement", function(ply, mv)
+    if not IsValid(ply) or not ply:Alive() then return end
+    local v = ply.ZevilVirus
+    if not (istable(v) and v.Infected) then return end
+    local stage = math.Clamp(tonumber(v.Stage) or 1, 1, 5)
+    local multiplier = stage >= 5 and 0.74 or stage >= 4 and 0.86 or stage >= 3 and 0.94 or 1
+    if multiplier < 1 then
+        mv:SetMaxSpeed(mv:GetMaxSpeed() * multiplier)
+        mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * multiplier)
+    end
+end)
+
 hook.Add("PlayerInitialSpawn", "ZevilSyncOnJoin", function(ply)
     timer.Simple(1, function() if IsValid(ply) then replicate(ply) end end)
 end)
@@ -214,6 +271,15 @@ timer.Create("ZevilVirusThink", 1, 0, function()
             v.NextStage = now + cv.zevil_progression:GetFloat()
             replicate(ent)
             hook.Run("Zevil_StageChanged", ent, v.Stage)
+        end
+        if ent:IsPlayer() and v.Stage >= 2 and now >= (v.NextGroan or 0) then
+            local groans = {
+                "npc/zombie/moan1.wav",
+                "npc/zombie/moan2.wav",
+                "npc/zombie/moan3.wav"
+            }
+            ent:EmitSound(groans[math.random(#groans)], 58, math.random(92, 106), 0.45)
+            v.NextGroan = now + math.Rand(22, 36)
         end
         if ent:IsPlayer() and v.Stage >= 3 and now >= (v.NextDamage or math.huge) then
             local damage = DamageInfo()
