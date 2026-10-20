@@ -167,6 +167,13 @@ local function UnlinkZCityFakeRagdoll(host, rag)
         if host.SetNW2Entity then
             pcall(host.SetNW2Entity, host, "FakeRagdoll", IsValid(previousNW2) and previousNW2 or NULL)
         end
+    elseif hasForeignLink and currentNW2 == rag and host.SetNW2Entity then
+        -- BZCN currently uses NWEntity/owner.FakeRagdoll for its downed rag, not
+        -- NW2Entity. Remove our stale NW2 backlink without replacing the newer
+        -- body link that has priority in the native Z-City resolver.
+        local replacement = IsValid(currentNW) and currentNW
+            or (IsValid(currentField) and currentField or NULL)
+        pcall(host.SetNW2Entity, host, "FakeRagdoll", replacement)
     end
 
     host.ZevilFakeRagdollLinkSaved = nil
