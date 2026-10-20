@@ -132,10 +132,11 @@ local function DescribeZevilNPC(ent)
     local body = IsValid(puppet) and puppet or (IsValid(downed) and downed or ent)
     local bodyWounds = IsValid(body) and CountZevilWounds(body, "wounds") or 0
     print(string.format(
-        "[Zevil] %s#%d model=%s class=%s zombieStyle=%s attached=%s nativeFlag=%s registry=%s hostWounds=%d hostArterial=%d body=%s bodyWounds=%d",
+        "[Zevil] %s#%d model=%s class=%s zombieStyle=%s appearanceCatalogue=%s attached=%s nativeFlag=%s registry=%s hostWounds=%d hostArterial=%d body=%s bodyWounds=%d",
         ent:GetClass(), ent:EntIndex(), tostring(ent:GetModel()),
         tostring(ent.BZCNClass or ent.PlayerClassName or "none"),
         tostring(profile.ZombieStyle == true),
+        tostring(ent.ZevilHGAppearance == true),
         tostring(ent.ZevilZCitySupportAttached == true),
         tostring(ent.ZevilZCitySupportNative == true),
         tostring(registered),
