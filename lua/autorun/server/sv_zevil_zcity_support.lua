@@ -161,9 +161,8 @@ timer.Create("Zevil_ZCitySupportWatchdog", 5, 0, function()
             if not IsValid(ent) then continue end
             local registered = nativeAPIReady and ent.organism ~= nil
                 and nativeList[ent] == ent.organism
-            if registered then
+            if registered and ent.ZevilZCitySupportAttached == true then
                 ent.ZevilZCitySupportNative = true
-                ent.ZevilZCitySupportAttached = true
                 ent.IsOrganism = true
                 ent.hg_organism = true
             else
