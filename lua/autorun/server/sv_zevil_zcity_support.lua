@@ -79,6 +79,17 @@ local function AttachNativeZCityOrganismOnly(ent)
                 ErrorNoHalt("[Zevil] hg.organism.Clear failed for "
                     .. tostring(ent:GetClass()) .. ": " .. tostring(result) .. "\n")
             end
+            -- Don't leave a half-initialized organism in the global Think list.
+            -- The next retry will call Add/Clear again once Z-City's hooks settle.
+            if api.list[ent] == org then
+                if isfunction(api.Remove) then
+                    pcall(api.Remove, ent)
+                else
+                    api.list[ent] = nil
+                end
+            end
+            if ent.organism == org then ent.organism = nil end
+            ent.ZevilNativeOrganismNeedsClear = nil
             return false
         end
         ent.ZevilNativeOrganismNeedsClear = nil
