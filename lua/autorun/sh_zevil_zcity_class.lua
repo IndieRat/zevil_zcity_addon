@@ -221,7 +221,13 @@ if SERVER then
     end)
 
     hook.Add("Player Think", "Zevil_KeepZCityClassAndHands", function(ply)
-        if IsZevilPlayer(ply) then ApplyZevilPlayerClass(ply) end
+        if not IsValid(ply) or not ply:IsPlayer() then return end
+        if IsZevilPlayer(ply) then
+            ApplyZevilPlayerClass(ply)
+        elseif ply.PlayerClassName == CLASS_NAME and ply.ZevilClassStateSaved then
+            -- Also recover cleanly if another addon clears ZevilVirus directly.
+            RestoreZevilPlayerClass(ply)
+        end
     end)
 end
 
