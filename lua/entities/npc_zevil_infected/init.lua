@@ -148,11 +148,70 @@ function ENT:SetZevilActivity(activity)
     self:StartActivity(activity)
 end
 
--- Keep NextBot locomotion pose parameters synchronized with path movement.
--- This prevents newly converted player-model bots from animating sideways.
+-- Remember the intended walk/run state while a melee sequence temporarily
+-- replaces it. ChaseTarget can remain active for several seconds after a lunge;
+-- without a timed return the bot kept trying to locomote in its attack sequence.
+function ENT:SetZevilLocomotionActivity(activity)
+    self.ZevilLocomotionActivity = activity
+    if not self.ZevilAttackUntil or CurTime() >= self.ZevilAttackUntil then
+        self:SetZevilActivity(activity)
+    end
+end
+
+function ENT:PlayZevilAttack(target, duration)
+    self.ZevilAttackFacingTarget = IsValid(target) and target or nil
+    self.ZevilAttackUntil = CurTime() + (duration or 0.7)
+    self:SetZevilActivity(ACT_MELEE_ATTACK1)
+end
+
+-- BodyMoveXY drives the locomotion pose, but does not guarantee root yaw is
+-- aligned after an attack sequence. Keep the model pointed at its attack target
+-- during the swing, then align to its actual travel vector so path cornering does
+-- not look like sideways shuffling on civilian models.
 function ENT:BodyUpdate()
     if self.BZCNNPCDowned then return end
+
+    local now = CurTime()
+    if self.ZevilAttackUntil and now >= self.ZevilAttackUntil then
+        self.ZevilAttackUntil = nil
+        self.ZevilAttackFacingTarget = nil
+        if self.ZevilLocomotionActivity then
+            self:SetZevilActivity(self.ZevilLocomotionActivity)
+        end
+    end
+
     self:BodyMoveXY()
+
+    local desiredYaw
+    local attackTarget = self.ZevilAttackFacingTarget
+    if self.ZevilAttackUntil and now < self.ZevilAttackUntil
+        and IsValid(attackTarget) and attackTarget:Health() > 0 then
+        local direction = attackTarget:WorldSpaceCenter() - self:WorldSpaceCenter()
+        direction.z = 0
+        if direction:LengthSqr() > 1 then
+            desiredYaw = direction:Angle().y
+        end
+    else
+        local velocity = self:GetVelocity()
+        velocity.z = 0
+        if velocity:LengthSqr() > 225 then
+            desiredYaw = velocity:Angle().y
+        elseif IsValid(self.Target) and self.Target:Health() > 0 then
+            local direction = self.Target:WorldSpaceCenter() - self:WorldSpaceCenter()
+            direction.z = 0
+            if direction:LengthSqr() > 1 then
+                desiredYaw = direction:Angle().y
+            end
+        end
+    end
+
+    if desiredYaw then
+        -- Fast enough to correct a 180-degree reversal promptly, but still
+        -- smooths direction changes as the path curves around an obstacle.
+        local turnRate = 1080 * math.max(FrameTime(), 0)
+        local yaw = math.ApproachAngle(self:GetAngles().y, desiredYaw, turnRate)
+        self:SetAngles(Angle(0, yaw, 0))
+    end
 end
 
 function ENT:Initialize()
@@ -206,7 +265,7 @@ function ENT:Bite(target)
     if not isAliveTarget(target) or CurTime() < self.NextBite then return end
     if self:GetPos():DistToSqr(target:GetPos()) > 78 * 78 then return end
     self.NextBite = CurTime() + 1.65
-    self:SetZevilActivity(ACT_MELEE_ATTACK1)
+    self:PlayZevilAttack(target, 0.72)
     self:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(82, 108))
     local hitPos = target:WorldSpaceCenter()
     util.Decal("Blood", hitPos + Vector(0, 0, 16), hitPos - Vector(0, 0, 48), {self, target})
@@ -239,6 +298,9 @@ end
 function ENT:Feed(corpse)
     if not IsValid(corpse) then return false end
     self.ZevilFeeding = true
+    self.ZevilAttackUntil = nil
+    self.ZevilAttackFacingTarget = nil
+    self.ZevilLocomotionActivity = ACT_IDLE
     self:SetZevilActivity(ACT_IDLE)
     self.loco:SetDesiredSpeed(0)
     self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 65, 75)
@@ -265,7 +327,7 @@ function ENT:RunBehaviour()
         self.Target = target
         if IsValid(target) then
             local critical = self:Health() <= math.max(self:GetMaxHealth(), 1) * 0.22
-            self:SetZevilActivity(critical and ACT_WALK or ACT_RUN)
+            self:SetZevilLocomotionActivity(critical and ACT_WALK or ACT_RUN)
             -- Critically injured infected drag themselves forward in the procedural
             -- crawl pose rather than sprinting upright with a broken-body silhouette.
             self.loco:SetDesiredSpeed(critical and 34 or (95 + (self.ZevilVirus.Stage or 2) * 7))
@@ -277,12 +339,12 @@ function ENT:RunBehaviour()
         else
             local corpse = self:FindCorpse()
             if IsValid(corpse) then
-                self:SetZevilActivity(ACT_WALK)
+                self:SetZevilLocomotionActivity(ACT_WALK)
                 self.loco:SetDesiredSpeed(65)
                 self:MoveToPos(corpse:GetPos(), {tolerance = 45, maxage = 2})
                 if IsValid(corpse) and self:GetPos():DistToSqr(corpse:GetPos()) < 55 * 55 then self:Feed(corpse) end
             else
-                self:SetZevilActivity(ACT_WALK)
+                self:SetZevilLocomotionActivity(ACT_WALK)
                 self.loco:SetDesiredSpeed(45)
                 self:MoveToPos(self:GetPos() + VectorRand() * math.random(100, 250), {tolerance = 30, maxage = 2})
             end
@@ -304,7 +366,7 @@ function ENT:ChaseTarget(target)
         elseif distanceSqr <= 150 * 150 and CurTime() >= self.NextLunge then
             -- Occasional forward lunge breaks up the straight-line shamble.
             self.NextLunge = CurTime() + math.Rand(3.5, 6.5)
-            self:SetZevilActivity(ACT_MELEE_ATTACK1)
+            self:PlayZevilAttack(target, 0.62)
             local direction = (target:WorldSpaceCenter() - self:WorldSpaceCenter()):GetNormalized()
             self.loco:SetVelocity(direction * math.Rand(170, 245) + Vector(0, 0, 85))
             self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 72, math.random(80, 100))
