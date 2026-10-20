@@ -1,9 +1,9 @@
 if SERVER then AddCSLuaFile() end
 
 -- Zevil integration for the pinned BZCN shared API.
--- This deliberately uses the API's compatibility adapter without calling
--- BZCN.ApplyClass: that routine marks NPCs as organism-backed and expects the
--- separate BZCN organism-support module. Zevil's virus state stays independent.
+-- Zevil keeps its own virus lifecycle and locomotion, while its NPCs opt into
+-- the BZCN injury bridge through Zevil.AttachZCityNPCSupport. The bridge is
+-- responsible for creating native organism state; this file only registers profiles.
 if not BZCN or not isfunction(BZCN.RegisterClass) then return end
 
 local function RegisterZevilClasses()
@@ -25,6 +25,25 @@ local function RegisterZevilClasses()
         MeleeDamage = 12,
         MeleeRange = 78,
         AttackDelay = 1.65,
+        WeaponClass = "",
+        Inventory = {Weapons = {}, Items = {}, Ammo = {}, Attachments = {}, Armor = {}}
+    })
+
+    BZCN.RegisterClass("ZevilCivilian", {
+        Name = "Zevil Civilian",
+        PlayerClassName = "civilian",
+        Model = "models/player/group03/male_07.mdl",
+        Health = 100,
+        Speed = 90,
+        BaseSpeedOverride = 90,
+        WalkSpeed = 48,
+        Faction = "civilian",
+        TeamName = "Survivor",
+        EnemyPlayers = false,
+        EnemyFactions = {"zombie", "Zevil", "ZevilInfected"},
+        FollowAllies = false,
+        Ranged = false,
+        Combat = false,
         WeaponClass = "",
         Inventory = {Weapons = {}, Items = {}, Ammo = {}, Attachments = {}, Armor = {}}
     })
