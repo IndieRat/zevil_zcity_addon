@@ -244,7 +244,9 @@ hook.Add("InitPostEntity", "Zevil_FakeInfected_AttachExisting", function()
 end)
 
 hook.Add("Zevil_HumanNPCConverted", "Zevil_FakeInfected_RefreshConvertedModel", function(_, infected)
-    QueueAttach(infected, true)
+    -- The conversion routine sets model/skin/bodygroups synchronously after Spawn;
+    -- the delayed attach therefore sees the final model and stays idempotent.
+    QueueAttach(infected, false)
 end)
 
 hook.Add("Think", "Zevil_FakeInfected_Control", function()
