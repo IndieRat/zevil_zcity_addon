@@ -93,8 +93,10 @@ local function MirrorZCityWounds(host, rag, force)
         pcall(BZCN.SetNetVar, rag, "arterialwounds", table.Copy(arterial))
     end
 
-    rag.organism = org
-    rag.BZCN_Organism = org
+    -- Do not assign rag.organism here. Z-City's damage hook treats any
+    -- entity with that field as a live organism, which would process the puppet
+    -- hit once and then process it again when this controller forwards damage.
+    -- Wound NetVars are enough for ABL and other visual readers.
     rag.BZCNNPCOwner = host
     if rag.SetNW2Entity then rag:SetNW2Entity("BZCNNPCOwner", host) end
     if rag.SetNWEntity then rag:SetNWEntity("BZCNNPCOwner", host) end
