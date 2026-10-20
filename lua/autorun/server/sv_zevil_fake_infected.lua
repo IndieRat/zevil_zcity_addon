@@ -242,9 +242,12 @@ local function MirrorZCityWounds(host, rag, force)
     -- entity with that field as a live organism, which would process the puppet
     -- hit once and then process it again when this controller forwards damage.
     -- Wound NetVars are enough for ABL and other visual readers.
-    rag.BZCNNPCOwner = host
-    if rag.SetNW2Entity then rag:SetNW2Entity("BZCNNPCOwner", host) end
-    if rag.SetNWEntity then rag:SetNWEntity("BZCNNPCOwner", host) end
+    -- Keep the visible standing puppet out of BZCN's downed-ragdoll marker.
+    rag.BZCNNPCOwner = nil
+    if rag.GetNW2Entity and rag:GetNW2Entity("BZCNNPCOwner") == host
+        and rag.SetNW2Entity then rag:SetNW2Entity("BZCNNPCOwner", NULL) end
+    if rag.GetNWEntity and rag:GetNWEntity("BZCNNPCOwner") == host
+        and rag.SetNWEntity then rag:SetNWEntity("BZCNNPCOwner", NULL) end
     rag.ZevilWoundSchedule = schedule
     rag.ZevilWoundSource = wounds
     rag.ZevilArterialWoundSource = arterial
