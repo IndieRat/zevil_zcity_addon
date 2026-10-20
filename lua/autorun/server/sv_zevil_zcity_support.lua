@@ -64,6 +64,12 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                     return
                 end
 
+                -- BZCN.ApplyClass can optimistically set these flags when its
+                -- support module exists; clear them until the native organism is
+                -- actually registered so third-party hooks never see a false positive.
+                ent.IsOrganism = nil
+                ent.hg_organism = nil
+
                 -- Attach may create its safe fallback before Z-City's organism
                 -- API finishes loading. Retry so the tracked state can upgrade
                 -- to the real native organism/wound lifecycle.
