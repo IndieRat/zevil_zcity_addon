@@ -178,9 +178,12 @@ hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
     zombie.ZevilVirus = infected
     zombie.ZevilVirus.Infected = true
     zombie.ZevilVirus.Stage = math.max(zombie.ZevilVirus.Stage or 1, 2)
+    zombie.ZevilVirus.NextStage = CurTime() + cv.zevil_progression:GetFloat()
+    zombie.ZevilVirus.StageTwoRegenStarted = nil
     zombie.ZevilVirus.Source = IsValid(source) and source or zombie.ZevilVirus.Source
     zombie:SetNW2Bool("ZevilInfected", true)
     zombie:SetNW2Int("ZevilStage", zombie.ZevilVirus.Stage)
+    hook.Run("Zevil_StageChanged", zombie, zombie.ZevilVirus.Stage)
     hook.Run("Zevil_HumanNPCConverted", old, zombie)
     old:Remove()
 end)
