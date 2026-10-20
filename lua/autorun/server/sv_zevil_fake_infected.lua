@@ -114,6 +114,7 @@ function Fake.Attach(host, forceRefresh)
     CopyAppearance(host, rag)
     rag:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
     rag:SetNW2Bool("ZevilFakePuppet", true)
+    rag:SetNW2Int("ZevilStage", host:GetNW2Int("ZevilStage", 2))
     rag:SetNW2Entity("ZevilPuppetOwner", host)
     rag.ZevilPuppetOwner = host
     rag.ZevilPuppetConstraint = constraint.NoCollide(host, rag, 0, 0)
@@ -185,6 +186,8 @@ local function ControlPuppet(host, rag, now)
     local movement = host:GetVelocity():Length2D()
     local phase = host:EntIndex() * 0.73
     local poseAmount = math.Clamp(strength:GetFloat(), 0, 2)
+    local stage = host:GetNW2Int("ZevilStage", 2)
+    if rag:GetNW2Int("ZevilStage", 2) ~= stage then rag:SetNW2Int("ZevilStage", stage) end
     local control = {
         secondstoarrive = math.Clamp(0.075 / math.max(poseAmount, 0.4), 0.035, 0.14),
         maxangular = 420 + 180 * poseAmount,
