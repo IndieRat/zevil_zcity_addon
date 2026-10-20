@@ -47,6 +47,23 @@ local function HasUsableSkeleton(ent)
         and ent:LookupBone("ValveBiped.Bip01_Head1") ~= nil
 end
 
+local function IsSafeMaterialOverride(material)
+    if not isstring(material) then return false end
+    local path = string.Trim(material)
+    if path == "" then return false end
+    path = string.lower(path)
+    path = string.gsub(path, "^materials/", "")
+    path = string.gsub(path, "%.vmt$", "")
+    -- Never interpret arbitrary entity strings as paths. Restrict overrides to
+    -- mounted VMT files, which includes approved Z-City/workshop outfit materials.
+    if path == "" or string.find(path, "..", 1, true)
+        or string.find(path, "\\", 1, true) or string.find(path, ":", 1, true)
+        or string.find(path, "%s") then
+        return false
+    end
+    return file.Exists("materials/" .. path .. ".vmt", "GAME")
+end
+
 local function CopyAppearance(source, rag)
     if source.GetSkin and rag.SetSkin then
         local skin = source:GetSkin()
@@ -62,28 +79,23 @@ local function CopyAppearance(source, rag)
 
     rag:SetColor(source:GetColor())
 
-    -- Do not copy arbitrary material overrides from the source entity. Some
-    -- addons store a model/material path here rather than a valid VMT override;
-    -- applying that to the ragdoll can trigger shader warnings such as bad $bumpmap.
-    -- Only mirror the known, explicit BZCN zombie sheet treatment. This allows
-    -- Z-City's zombie styling onto the visible puppet without reintroducing the
-    -- bad civilian material override reported by some mounted content.
-    local profile = source.BZCNClassProfile
-    if istable(profile) and profile.ZombieStyle == true
-        and isfunction(source.GetSubMaterialIdByName) and isfunction(source.GetSubMaterial) then
-        local allowed = {
-            ["models/zombie_classic/zombie_classic_sheet"] = true
-        }
-        local slots = {"distac/gloves/players_sheet", "distac/gloves/pants", "distac/gloves/cross"}
-        for _, slot in ipairs(slots) do
-            local ok, index = pcall(source.GetSubMaterialIdByName, source, slot)
-            if ok and isnumber(index) and index >= 0 then
-                local material = source:GetSubMaterial(index)
-                if isstring(material) and allowed[string.lower(material)] then
-                    rag:SetSubMaterial(index, material)
-                end
+    -- The visible puppet must receive the actual generated Z-City/custom-mod
+    -- clothing overrides, not just the stock zombie sheet. Copy only overrides
+    -- that resolve to mounted VMT files, avoiding invalid model paths and the
+    -- shader warnings that arbitrary custom material strings caused before.
+    if isfunction(source.GetMaterials) and isfunction(source.GetSubMaterial)
+        and isfunction(rag.SetSubMaterial) then
+        local materials = source:GetMaterials() or {}
+        for index = 0, #materials - 1 do
+            local material = source:GetSubMaterial(index)
+            if IsSafeMaterialOverride(material) then
+                rag:SetSubMaterial(index, material)
             end
         end
+    end
+
+    local profile = source.BZCNClassProfile
+    if istable(profile) and profile.ZombieStyle == true then
         -- BZCN intentionally blanks this slot for its infected appearance.
         rag:SetSubMaterial(4, "")
     end
@@ -124,6 +136,31 @@ local function MirrorZCityWounds(host, rag, force)
     elseif BZCN and isfunction(BZCN.SetNetVar) then
         pcall(BZCN.SetNetVar, rag, "wounds", table.Copy(wounds))
         pcall(BZCN.SetNetVar, rag, "arterialwounds", table.Copy(arterial))
+    end
+
+    -- Z-City's native fake-ragdoll convention is a "ply" owner link. Publish it
+    -- alongside Zevil/BZCN links so compatible wound renderers can resolve the
+    -- living NPC from the visible body instead of ignoring the prop_ragdoll.
+    rag.ply = host
+    rag.BZCNNPCOwner = host
+    if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", host) end
+    if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "ply", host) end
+    if not rag.ZevilIdentityMirrorInstalled then
+        rag.ZevilIdentityMirrorInstalled = true
+        if isfunction(rag.SetNetVar) and isfunction(host.GetNetVar) then
+            for _, key in ipairs({"PlayerName", "PlayerColor", "Accessories", "Inventory", "Armor"}) do
+                local value = host:GetNetVar(key, nil)
+                if value ~= nil then
+                    pcall(rag.SetNetVar, rag, key, istable(value) and table.Copy(value) or value)
+                end
+            end
+        end
+        if rag.SetNW2String then
+            rag:SetNW2String("BZCNClass", host:GetNW2String("BZCNClass", ""))
+            rag:SetNW2String("BZCNFaction", host:GetNW2String("BZCNFaction", ""))
+            rag:SetNW2String("PlayerClassName", host:GetNW2String("PlayerClassName", ""))
+            rag:SetNW2String("BZCNDisplayName", host:GetNW2String("BZCNDisplayName", ""))
+        end
     end
 
     -- Do not assign rag.organism here. Z-City's damage hook treats any
