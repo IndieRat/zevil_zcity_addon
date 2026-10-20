@@ -2,7 +2,7 @@
 -- Standalone SWEP: does not depend on Z-City's medical weapon implementation.
 if SERVER then AddCSLuaFile() end
 
-SWEP.Base = "weapon_base"
+SWEP.Base = "weapon_bandage_sh"
 SWEP.PrintName = "Zevil Virus Syringe"
 SWEP.Author = "Zevil Z-City"
 SWEP.Instructions = "LMB: inject yourself. RMB: inject a nearby person or NPC."
@@ -12,6 +12,8 @@ SWEP.AdminOnly = false
 SWEP.UseHands = true
 SWEP.DrawAmmo = false
 SWEP.DrawCrosshair = false
+SWEP.showstats = false
+SWEP.modeNames = {[1] = "viral dose"}
 SWEP.Slot = 4
 SWEP.SlotPos = 3
 SWEP.HoldType = "normal"
@@ -32,10 +34,6 @@ SWEP.Secondary.Ammo = "none"
 
 local INJECTION_RANGE = 112
 local INJECTION_COOLDOWN = 1.1
-
-function SWEP:Initialize()
-    self:SetHoldType(self.HoldType)
-end
 
 local function Tell(ply, message)
     if not IsValid(ply) then return end
