@@ -109,7 +109,9 @@ local function LinkZCityFakeRagdoll(host, rag)
     if not IsValid(host) or not IsValid(rag) then return false end
 
     rag.ply = host
-    rag.BZCNNPCOwner = host
+    rag.ply = host
+    if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "BZCNNPCOwner", NULL) end
+    if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "BZCNNPCOwner", NULL) end
     if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", host) end
     if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "ply", host) end
 
