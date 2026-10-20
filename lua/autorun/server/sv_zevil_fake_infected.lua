@@ -125,7 +125,7 @@ function Fake.Attach(host, forceRefresh)
     return true
 end
 
-local function ApplyInfectedPose(name, angle, time, phase, movement, amount)
+local function ApplyInfectedPose(name, angle, time, phase, movement, amount, crawling)
     local a = Angle(angle.p, angle.y, angle.r)
     local gait = math.sin(time * (movement > 15 and 7.5 or 1.8) + phase)
     local sway = math.sin(time * 1.35 + phase * 0.7)
@@ -135,33 +135,33 @@ local function ApplyInfectedPose(name, angle, time, phase, movement, amount)
         a:RotateAroundAxis(a:Forward(), sway * 2.5 * amount)
     elseif name == "valvebiped.bip01_spine" or name == "valvebiped.bip01_spine1"
         or name == "valvebiped.bip01_spine2" then
-        a:RotateAroundAxis(a:Right(), (9 + gait * 2.5) * amount)
+        a:RotateAroundAxis(a:Right(), ((crawling and 38 or 9) + gait * (crawling and 1.5 or 2.5)) * amount)
         a:RotateAroundAxis(a:Forward(), (7 * sway + idleTremor) * amount)
     elseif name == "valvebiped.bip01_spine4" or name == "valvebiped.bip01_neck1" then
-        a:RotateAroundAxis(a:Right(), (4 - gait * 2) * amount)
+        a:RotateAroundAxis(a:Right(), ((crawling and 22 or 4) - gait * 2) * amount)
         a:RotateAroundAxis(a:Forward(), (-5 * sway) * amount)
     elseif name == "valvebiped.bip01_head1" then
-        a:RotateAroundAxis(a:Right(), (7 + 4 * sway) * amount)
+        a:RotateAroundAxis(a:Right(), ((crawling and -10 or 7) + 4 * sway) * amount)
         a:RotateAroundAxis(a:Forward(), (9 * math.sin(time * 1.05 + phase)) * amount)
         a:RotateAroundAxis(a:Up(), (6 * math.sin(time * 0.8 + phase * 1.3)) * amount)
     elseif name == "valvebiped.bip01_l_upperarm" then
-        a:RotateAroundAxis(a:Right(), -13 * amount)
-        a:RotateAroundAxis(a:Forward(), -11 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and -48 or -13) * amount)
+        a:RotateAroundAxis(a:Forward(), (crawling and -22 or -11) * amount)
     elseif name == "valvebiped.bip01_l_forearm" then
-        a:RotateAroundAxis(a:Right(), -27 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and -62 or -27) * amount)
     elseif name == "valvebiped.bip01_r_upperarm" then
-        a:RotateAroundAxis(a:Right(), 17 * amount)
-        a:RotateAroundAxis(a:Forward(), 12 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and 42 or 17) * amount)
+        a:RotateAroundAxis(a:Forward(), (crawling and 18 or 12) * amount)
     elseif name == "valvebiped.bip01_r_forearm" then
-        a:RotateAroundAxis(a:Right(), -38 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and -58 or -38) * amount)
     elseif name == "valvebiped.bip01_l_thigh" then
-        a:RotateAroundAxis(a:Right(), gait * 5 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and -25 or gait * 5) * amount)
     elseif name == "valvebiped.bip01_r_thigh" then
-        a:RotateAroundAxis(a:Right(), -gait * 3 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and -18 or -gait * 3) * amount)
     elseif name == "valvebiped.bip01_l_calf" then
-        a:RotateAroundAxis(a:Right(), math.max(gait, 0) * 6 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and 35 or math.max(gait, 0) * 6) * amount)
     elseif name == "valvebiped.bip01_r_calf" then
-        a:RotateAroundAxis(a:Right(), math.max(-gait, 0) * 8 * amount)
+        a:RotateAroundAxis(a:Right(), (crawling and 30 or math.max(-gait, 0) * 8) * amount)
     end
 
     return a
@@ -182,6 +182,8 @@ local function ControlPuppet(host, rag, now)
     local movement = host:GetVelocity():Length2D()
     local phase = host:EntIndex() * 0.73
     local poseAmount = math.Clamp(strength:GetFloat(), 0, 2)
+    local maxHealth = math.max(host:GetMaxHealth(), 1)
+    local crawling = host.ZevilCrawling == true or host:Health() <= maxHealth * 0.22
     local stage = host:GetNW2Int("ZevilStage", 2)
     if rag:GetNW2Int("ZevilStage", 2) ~= stage then rag:SetNW2Int("ZevilStage", stage) end
     local control = {
@@ -230,8 +232,31 @@ local function ControlPuppet(host, rag, now)
             worldPos, worldAng, rootPos, rootAng
         )
         local targetAng = ApplyInfectedPose(
-            lowerBoneName, localAng, now, phase, movement, poseAmount
+            lowerBoneName, localAng, now, phase, movement, poseAmount, crawling
         )
+
+        -- Crawl posture lowers the upper body toward the floor while keeping
+        -- pelvis/legs closer to the NextBot's collision origin. Standing, walking,
+        -- and running continue to inherit the source activity's animated bones.
+        if crawling then
+            if lowerBoneName == "valvebiped.bip01_pelvis" then
+                localPos.z = localPos.z - 5
+            elseif lowerBoneName == "valvebiped.bip01_spine"
+                or lowerBoneName == "valvebiped.bip01_spine1"
+                or lowerBoneName == "valvebiped.bip01_spine2" then
+                localPos.z = localPos.z - 18
+            elseif lowerBoneName == "valvebiped.bip01_spine4"
+                or lowerBoneName == "valvebiped.bip01_neck1"
+                or lowerBoneName == "valvebiped.bip01_head1" then
+                localPos.z = localPos.z - 29
+            elseif lowerBoneName:find("_upperarm", 1, true) then
+                localPos.z = localPos.z - 14
+            elseif lowerBoneName:find("_forearm", 1, true)
+                or lowerBoneName:find("_hand", 1, true) then
+                localPos.z = localPos.z - 19
+            end
+        end
+
         local targetPos, targetWorldAng = LocalToWorld(localPos, targetAng, rootPos, rootAng)
 
         control.pos = targetPos
@@ -264,6 +289,53 @@ hook.Add("Zevil_HumanNPCConverted", "Zevil_FakeInfected_RefreshConvertedModel", 
     QueueAttach(infected, false)
 end)
 
+
+local function GetPuppetMouthPosition(host, rag)
+    local headBone = rag:LookupBone("ValveBiped.Bip01_Head1")
+    if headBone then
+        local physBone = rag:TranslateBoneToPhysBone(headBone)
+        if physBone and physBone >= 0 then
+            local phys = rag:GetPhysicsObjectNum(physBone)
+            if IsValid(phys) then
+                local pos, ang = phys:GetPos(), phys:GetAngles()
+                return pos + ang:Forward() * 4 - ang:Up() * 3
+            end
+        end
+    end
+
+    local hostHead = host:LookupBone("ValveBiped.Bip01_Head1")
+    if hostHead and isfunction(host.GetBonePosition) then
+        local pos = host:GetBonePosition(hostHead)
+        if isvector(pos) and pos ~= vector_origin then return pos end
+    end
+    return host:WorldSpaceCenter() + Vector(0, 0, 20)
+end
+
+local function EmitZCityFalseMouthBleed(host, rag)
+    if not IsValid(host) or not IsValid(rag) then return end
+    local mouth = GetPuppetMouthPosition(host, rag)
+
+    -- Use Z-City's existing blood-particle network message when the organism
+    -- particle module registered it. This is presentation only: no fake
+    -- organism table, wound, or player damage is created for the NextBot.
+    if util.NetworkStringToID("hg_bloodimpact") > 0 then
+        net.Start("hg_bloodimpact")
+        net.WriteVector(mouth)
+        net.WriteVector(Vector(0, 0, 0.045))
+        net.WriteFloat(0.2)
+        net.WriteInt(1, 8)
+        net.Broadcast()
+        return
+    end
+
+    -- Standalone fallback for servers without Z-City's custom blood particles.
+    local effect = EffectData()
+    effect:SetOrigin(mouth)
+    effect:SetMagnitude(0.25)
+    effect:SetScale(0.25)
+    util.Effect("BloodImpact", effect, true, true)
+end
+
 hook.Add("Think", "Zevil_FakeInfected_Control", function()
     if not enabled:GetBool() then
         for host in pairs(active) do
@@ -283,6 +355,13 @@ hook.Add("Think", "Zevil_FakeInfected_Control", function()
             Fake.Detach(host, false)
             continue
         end
+
+        if host:GetNW2Int("ZevilStage", 2) >= 2
+            and now >= (host.ZevilNextMouthBleed or 0) then
+            EmitZCityFalseMouthBleed(host, rag)
+            host.ZevilNextMouthBleed = now + math.Rand(0.55, 0.9)
+        end
+
         if now < (host.ZevilFakeNextControl or 0) then continue end
         host.ZevilFakeNextControl = now + interval
         ControlPuppet(host, rag, now)
