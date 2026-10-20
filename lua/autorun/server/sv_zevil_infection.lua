@@ -315,6 +315,28 @@ concommand.Add("zevil_status", function(ply)
     if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
 end)
 
+concommand.Add("zevil_give_syringe", function(ply)
+    if not IsValid(ply) or not ply:IsPlayer() then
+        print("[Zevil] Run zevil_give_syringe from an in-game admin console.")
+        return
+    end
+    if not ply:IsAdmin() then
+        ply:ChatPrint("[Zevil] Admin permission required.")
+        return
+    end
+    if not enabled() then
+        ply:ChatPrint("[Zevil] Infection is disabled by zevil_enabled.")
+        return
+    end
+    if not weapons.GetStored("weapon_zevil_virus_syringe") then
+        ply:ChatPrint("[Zevil] Syringe SWEP is not registered. Check Lua errors and restart/reload the addon.")
+        return
+    end
+    ply:Give("weapon_zevil_virus_syringe")
+    ply:SelectWeapon("weapon_zevil_virus_syringe")
+    ply:ChatPrint("[Zevil] Virus syringe issued. LMB injects yourself; RMB injects a nearby target.")
+end)
+
 concommand.Add("zevil_spawn_infected", function(ply)
     if IsValid(ply) and not ply:IsAdmin() then return end
     local count = 0
