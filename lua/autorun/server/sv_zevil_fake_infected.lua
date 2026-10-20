@@ -65,7 +65,28 @@ local function CopyAppearance(source, rag)
     -- Do not copy arbitrary material overrides from the source entity. Some
     -- addons store a model/material path here rather than a valid VMT override;
     -- applying that to the ragdoll can trigger shader warnings such as bad $bumpmap.
-    -- The ragdoll already uses the same model, skin, bodygroups and authored materials.
+    -- Only mirror the known, explicit BZCN zombie sheet treatment. This allows
+    -- Z-City's zombie styling onto the visible puppet without reintroducing the
+    -- bad civilian material override reported by some mounted content.
+    local profile = source.BZCNClassProfile
+    if istable(profile) and profile.ZombieStyle == true
+        and isfunction(source.GetSubMaterialIdByName) and isfunction(source.GetSubMaterial) then
+        local allowed = {
+            ["models/zombie_classic/zombie_classic_sheet"] = true
+        }
+        local slots = {"distac/gloves/players_sheet", "distac/gloves/pants", "distac/gloves/cross"}
+        for _, slot in ipairs(slots) do
+            local ok, index = pcall(source.GetSubMaterialIdByName, source, slot)
+            if ok and isnumber(index) and index >= 0 then
+                local material = source:GetSubMaterial(index)
+                if isstring(material) and allowed[string.lower(material)] then
+                    rag:SetSubMaterial(index, material)
+                end
+            end
+        end
+        -- BZCN intentionally blanks this slot for its infected appearance.
+        rag:SetSubMaterial(4, "")
+    end
 end
 
 local function MirrorZCityWounds(host, rag, force)
