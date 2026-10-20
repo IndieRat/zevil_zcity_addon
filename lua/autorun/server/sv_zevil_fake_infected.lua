@@ -109,7 +109,6 @@ local function LinkZCityFakeRagdoll(host, rag)
     if not IsValid(host) or not IsValid(rag) then return false end
 
     rag.ply = host
-    rag.ply = host
     if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "BZCNNPCOwner", NULL) end
     if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "BZCNNPCOwner", NULL) end
     if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", host) end
@@ -213,11 +212,10 @@ local function MirrorZCityWounds(host, rag, force)
         pcall(BZCN.SetNetVar, rag, "arterialwounds", table.Copy(arterial))
     end
 
-    -- Z-City's native fake-ragdoll convention is a "ply" owner link. Publish it
-    -- alongside Zevil/BZCN links so compatible wound renderers can resolve the
-    -- living NPC from the visible body instead of ignoring the prop_ragdoll.
+    -- Z-City's native fake-ragdoll convention is a "ply" owner link. Pair it
+    -- with the host's FakeRagdoll backlink below so native wound renderers and
+    -- hg.RagdollOwner can resolve the visible prop_ragdoll.
     rag.ply = host
-    rag.BZCNNPCOwner = host
     if rag.SetNWEntity then pcall(rag.SetNWEntity, rag, "ply", host) end
     if rag.SetNW2Entity then pcall(rag.SetNW2Entity, rag, "ply", host) end
     if not rag.ZevilIdentityMirrorInstalled then
