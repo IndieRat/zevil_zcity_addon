@@ -406,7 +406,9 @@ hook.Add("Org Think", "Zevil_FakeInfected_MirrorZCityWounds", function(owner, or
         if not IsValid(owner) or owner.organism ~= org then return end
         local puppet = owner.ZevilFakePuppet
         if IsValid(puppet) and puppet.ZevilPuppetOwner == owner then
-            MirrorZCityWounds(owner, puppet, true)
+            -- Native wound arrays mutate in-place. Mirror on the helper's
+            -- bounded refresh cadence instead of broadcasting ten copies/sec.
+            MirrorZCityWounds(owner, puppet, false)
         end
     end)
 end)
@@ -498,10 +500,22 @@ hook.Add("Think", "Zevil_FakeInfected_Control", function()
         end
 
         MirrorZCityWounds(host, rag, false)
-        if host:GetNW2Int("ZevilStage", 2) >= 2
-            and now >= (host.ZevilNextMouthBleed or 0) then
+        local stage = host:GetNW2Int("ZevilStage", 2)
+        if stage >= 2 and now >= (host.ZevilNextMouthBleed or 0) then
             EmitZCityFalseMouthBleed(host, rag)
             host.ZevilNextMouthBleed = now + math.Rand(0.55, 0.9)
+        end
+
+        -- Low-rate ambient groans make these feel like infected civilians rather
+        -- than silently controlled puppets. Initial offsets avoid synchronized hordes.
+        if stage >= 2 and not host.BZCNNPCDowned and now >= (host.ZevilNextGroan or 0) then
+            local groans = {
+                "npc/zombie/moan1.wav",
+                "npc/zombie/moan2.wav",
+                "npc/zombie/moan3.wav"
+            }
+            host:EmitSound(groans[math.random(#groans)], 62, math.random(88, 104), 0.72)
+            host.ZevilNextGroan = now + math.Rand(7, 15)
         end
 
         if now < (host.ZevilFakeNextControl or 0) then continue end
