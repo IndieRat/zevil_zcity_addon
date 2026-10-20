@@ -86,6 +86,107 @@ local function isAliveTarget(ent)
         and not (ent.ZevilVirus and ent.ZevilVirus.Infected)
 end
 
+local function HasInfectedAppearanceSkeleton(ent)
+    return IsValid(ent) and isfunction(ent.LookupBone)
+        and ent:LookupBone("ValveBiped.Bip01_Pelvis") ~= nil
+        and ent:LookupBone("ValveBiped.Bip01_Spine2") ~= nil
+        and ent:LookupBone("ValveBiped.Bip01_Head1") ~= nil
+end
+
+local function RandomizeInfectedFallbackAppearance(self)
+    -- Keep a supported ValveBiped fallback if the appearance catalogue selects
+    -- a model that cannot drive the procedural puppet.
+    self:SetModel(GetInfectedModel())
+    local skinCount = isfunction(self.SkinCount) and self:SkinCount() or 1
+    if skinCount > 0 then self:SetSkin(math.random(0, skinCount - 1)) end
+    for _, group in ipairs(self:GetBodyGroups() or {}) do
+        local id, count = tonumber(group.id), tonumber(group.num) or 0
+        if id and id >= 0 and count > 1 then
+            self:SetBodygroup(id, math.random(0, count - 1))
+        end
+    end
+end
+
+local function ApplyHGInfectedAppearance(self)
+    local appearanceAPI = hg and hg.Appearance
+    if not (appearanceAPI and isfunction(appearanceAPI.GetRandomAppearance)
+        and isfunction(appearanceAPI.ForceApplyAppearance)) then
+        return false
+    end
+
+    local ok, raw = pcall(appearanceAPI.GetRandomAppearance)
+    if not ok or not istable(raw) then
+        ErrorNoHalt("[Zevil] Could not generate a Z-City infected appearance: "
+            .. tostring(raw) .. "\n")
+        return false
+    end
+
+    local appearance = table.Copy(raw)
+    if isstring(appearance.AModel) and not util.IsValidModel(appearance.AModel) then
+        appearance.AModel = nil
+    end
+    -- Keep Z-City's random model/clothing, but remove civilian accessories.
+    appearance.AAttachments = ""
+
+    local modelSex = BZCN and isfunction(BZCN.GetModelSex)
+        and BZCN.GetModelSex(appearance.AModel) or nil
+    if BZCN and isfunction(BZCN.GetRandomHumanName) then
+        appearance.AName = BZCN.GetRandomHumanName(modelSex or appearance.AModel)
+    end
+
+    local fallbackModel = self:GetModel()
+    local savedMethods = {}
+    local function InstallShim(name, fn)
+        savedMethods[#savedMethods + 1] = {name, self[name]}
+        self[name] = fn
+    end
+    InstallShim("SetPlayerColor", function(ent, color)
+        if not isvector(color) then return end
+        ent.BZCNPlayerColor = color
+        if ent.SetNW2Vector then ent:SetNW2Vector("PlayerColor", color) end
+    end)
+    InstallShim("SetNWVector", function(ent, key, value)
+        if ent.SetNW2Vector and isvector(value) then ent:SetNW2Vector(key, value) end
+    end)
+    InstallShim("SetBodyGroups", function(ent, groups)
+        if not isstring(groups) then return end
+        for _, bodygroup in ipairs(ent:GetBodyGroups() or {}) do
+            local id = tonumber(bodygroup.id)
+            if id and id >= 0 then
+                local digit = string.sub(groups, id + 1, id + 1)
+                if digit ~= "" then ent:SetBodygroup(id, tonumber(digit) or 0) end
+            end
+        end
+    end)
+
+    local applied, result = pcall(appearanceAPI.ForceApplyAppearance, self, appearance)
+    for _, saved in ipairs(savedMethods) do self[saved[1]] = saved[2] end
+
+    if not applied or not util.IsValidModel(self:GetModel())
+        or not HasInfectedAppearanceSkeleton(self) then
+        self:SetModel(fallbackModel)
+        if not self.ZevilAppearanceWarned then
+            self.ZevilAppearanceWarned = true
+            ErrorNoHalt("[Zevil] Z-City infected appearance was incompatible; using a "
+                .. "ValveBiped citizen fallback. " .. tostring(result or "") .. "\n")
+        end
+        return false
+    end
+
+    self.CurAppearance = table.Copy(appearance)
+    self.BZCNDisplayName = appearance.AName
+    self.PlayerName = appearance.AName
+    self:SetNW2String("BZCNDisplayName", appearance.AName or ("Infected " .. self:EntIndex()))
+    if isfunction(self.SetNetVar) then
+        pcall(self.SetNetVar, self, "Accessories", "")
+        pcall(self.SetNetVar, self, "PlayerName", appearance.AName or ("Infected " .. self:EntIndex()))
+    elseif BZCN and isfunction(BZCN.SetNetVar) then
+        pcall(BZCN.SetNetVar, self, "Accessories", "")
+        pcall(BZCN.SetNetVar, self, "PlayerName", appearance.AName or ("Infected " .. self:EntIndex()))
+    end
+    return true
+end
+
 local function SetupBZCNCompatibility(self)
     if not BZCN or not isfunction(BZCN.InstallAdapter) or not isfunction(BZCN.GetClass) then return end
 
@@ -124,7 +225,8 @@ local function SetupBZCNCompatibility(self)
         end
     end
 
-    local formerName = string.Trim(tostring(self.ZevilFormerName or ""))
+    local formerName = string.Trim(tostring(self.ZevilFormerName
+        or (istable(self.CurAppearance) and self.CurAppearance.AName) or ""))
     local displayName = formerName ~= "" and (formerName .. " (infected)") or ("Infected " .. tostring(self:EntIndex()))
     self.BZCNDisplayName = displayName
     self.PlayerName = displayName
@@ -231,7 +333,15 @@ function ENT:Initialize()
     self.ZevilVirus = {Infected = true, Stage = 2, Exposure = 100, InfectedAt = CurTime(), NextStage = CurTime() + 120}
     self:SetNW2Bool("ZevilInfected", true)
     self:SetNW2Int("ZevilStage", 2)
+
+    -- Use Z-City's appearance catalogue, including configured/custom player
+    -- models and clothing, before applying the registered zombie-style profile.
+    -- Models without the required ValveBiped skeleton fall back safely.
+    if not ApplyHGInfectedAppearance(self) then
+        RandomizeInfectedFallbackAppearance(self)
+    end
     SetupBZCNCompatibility(self)
+
     if Zevil and isfunction(Zevil.AttachZCityNPCSupport) then
         Zevil.AttachZCityNPCSupport(self, "ZevilInfected", "zombie")
     end
