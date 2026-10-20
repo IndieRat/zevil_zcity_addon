@@ -122,17 +122,14 @@ local function isHumanNPC(ent)
         or class == "npc_citizen" or class == "npc_metropolice"
         or class == "npc_barney" or class == "npc_alyx"
         or class == "npc_kleiner" or class == "npc_mossman"
-        or class == "npc_zevil_rookiecop"
+        or class == "npc_zevil_rookiecop" or class == "npc_zevil_civilian"
 end
 
 hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
     if not enabled() or not isHumanNPC(host) or host:GetClass() == "npc_zevil_infected" then return end
     local old = host
-    local pos, ang, model = old:GetPos(), old:GetAngles(), old:GetModel()
+    local pos, ang = old:GetPos(), old:GetAngles()
     local hp, maxhp = math.max(old:Health(), 1), math.max(old:GetMaxHealth(), 1)
-    local skin = old:GetSkin()
-    local groups = {}
-    for i = 0, math.max(old:GetNumBodyGroups() - 1, -1) do groups[i] = old:GetBodygroup(i) end
     local velocity = old:GetVelocity()
     local formerName = isfunction(old.Nick) and old:Nick() or (isfunction(old.GetName) and old:GetName() or "")
     local infected = table.Copy(old.ZevilVirus or {})
@@ -141,18 +138,14 @@ hook.Add("Zevil_Infected", "Zevil_ConvertHumanNPC", function(host, source)
         ErrorNoHalt("[Zevil] Failed to convert infected human NPC; keeping original entity.\n")
         return
     end
-    zombie.ZevilModel = model
     zombie.ZevilFormerName = formerName ~= "" and formerName or nil
     zombie:SetPos(pos)
     zombie:SetAngles(ang)
     zombie:Spawn()
     zombie:Activate()
     if not IsValid(zombie) then return end
-    zombie:SetModel(model)
-    if skin and skin >= 0 then zombie:SetSkin(skin) end
-    for i, value in pairs(groups) do
-        if i < zombie:GetNumBodyGroups() then zombie:SetBodygroup(i, value) end
-    end
+    -- The infected entity selects a random civilian player model during
+    -- Initialize; do not overwrite it with Combine/zombie/special NPC models.
     zombie:SetMaxHealth(maxhp)
     zombie:SetHealth(math.min(hp, maxhp))
     zombie:SetVelocity(velocity)
