@@ -49,13 +49,11 @@ local function CopyAppearance(source, rag)
     end
 
     rag:SetColor(source:GetColor())
-    rag:SetMaterial(source:GetMaterial() or "")
 
-    if source.GetNumSubMaterials and source.GetSubMaterial and rag.SetSubMaterial then
-        for index = 0, source:GetNumSubMaterials() - 1 do
-            rag:SetSubMaterial(index, source:GetSubMaterial(index) or "")
-        end
-    end
+    -- Do not copy arbitrary material overrides from the source entity. Some
+    -- addons store a model/material path here rather than a valid VMT override;
+    -- applying that to the ragdoll can trigger shader warnings such as bad $bumpmap.
+    -- The ragdoll already uses the same model, skin, bodygroups and authored materials.
 end
 
 function Fake.Detach(host, keepCorpse)
@@ -177,7 +175,9 @@ local function ControlPuppet(host, rag, now)
         return
     end
 
-    host:SetupBones()
+    -- SetupBones is not exposed on every server-side NextBot/entity Lua metatable.
+    -- Bone matrices/positions are still readable on supported models without it.
+    if isfunction(host.SetupBones) then host:SetupBones() end
     local rootPos, rootAng = host:GetPos(), host:GetAngles()
     local movement = host:GetVelocity():Length2D()
     local phase = host:EntIndex() * 0.73
@@ -208,11 +208,26 @@ local function ControlPuppet(host, rag, now)
         -- the procedural pose table, since ValveBiped bone lookup is case-sensitive.
         local sourceBone = host:LookupBone(boneName)
         if not sourceBone then continue end
-        local matrix = host:GetBoneMatrix(sourceBone)
-        if not matrix then continue end
+        local worldPos, worldAng
+        if isfunction(host.GetBoneMatrix) then
+            local matrix = host:GetBoneMatrix(sourceBone)
+            if matrix then
+                worldPos, worldAng = matrix:GetTranslation(), matrix:GetAngles()
+            end
+        end
+
+        -- Some server-side animated entities do not provide a usable bone
+        -- matrix on every tick. Fall back to the public bone-position accessor.
+        if (not worldPos or not worldAng) and isfunction(host.GetBonePosition) then
+            local pos, ang = host:GetBonePosition(sourceBone)
+            if isvector(pos) and isangle(ang) then
+                worldPos, worldAng = pos, ang
+            end
+        end
+        if not isvector(worldPos) or not isangle(worldAng) then continue end
 
         local localPos, localAng = WorldToLocal(
-            matrix:GetTranslation(), matrix:GetAngles(), rootPos, rootAng
+            worldPos, worldAng, rootPos, rootAng
         )
         local targetAng = ApplyInfectedPose(
             lowerBoneName, localAng, now, phase, movement, poseAmount
