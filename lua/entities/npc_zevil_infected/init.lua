@@ -245,16 +245,30 @@ function ENT:OnInjured(dmg)
 end
 
 function ENT:OnKilled(dmg)
-    local rag = ents.Create("prop_ragdoll")
+    -- Keep the live procedural puppet as the corpse so death does not pop into
+    -- a second, default-pose ragdoll. The controller detaches it from the AI.
+    local rag
+    if Zevil and Zevil.InfectedFake and isfunction(Zevil.InfectedFake.Detach) then
+        rag = Zevil.InfectedFake.Detach(self, true)
+    end
+
+    if not IsValid(rag) then
+        rag = ents.Create("prop_ragdoll")
+        if IsValid(rag) then
+            rag:SetModel(self:GetModel())
+            rag:SetPos(self:GetPos())
+            rag:SetAngles(self:GetAngles())
+            rag:Spawn()
+            rag:Activate()
+        end
+    end
+
     if IsValid(rag) then
-        rag:SetModel(self:GetModel())
-        rag:SetPos(self:GetPos())
-        rag:SetAngles(self:GetAngles())
-        rag:Spawn()
-        rag:Activate()
         rag.ZevilCorpse = true
+        rag:SetNW2Bool("ZevilFakePuppet", false)
         SafeRemoveEntityDelayed(rag, 180)
     end
+
     hook.Run("Zevil_InfectedKilled", self, dmg)
     self:Remove()
 end
