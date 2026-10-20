@@ -2,6 +2,24 @@
 if not CLIENT then return end
 
 local bloodMat = Material("sprites/glow04_noz")
+
+-- Client-facing body resolver for wound renderers/compatibility adapters.
+-- Prefer the entity the server says is currently visible, including BZCN's
+-- knockdown ragdoll; fall back to the NextBot when no proxy is active.
+Zevil = Zevil or {}
+Zevil.InfectedFake = Zevil.InfectedFake or {}
+function Zevil.InfectedFake.GetVisibleBody(ent)
+    if not IsValid(ent) then return nil end
+    local body = ent.GetNW2Entity and ent:GetNW2Entity("ZevilVisibleBody") or nil
+    return IsValid(body) and body or ent
+end
+
+function Zevil.InfectedFake.GetOwner(body)
+    if not IsValid(body) then return nil end
+    local owner = body.GetNW2Entity and body:GetNW2Entity("ZevilPuppetOwner") or nil
+    if not IsValid(owner) then owner = body:GetNW2Entity("BZCNNPCOwner") end
+    return IsValid(owner) and owner or nil
+end
 local puppets = setmetatable({}, {__mode = "k"})
 local nextScan = 0
 
