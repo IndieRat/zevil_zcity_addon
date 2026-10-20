@@ -89,8 +89,9 @@ end
 local function SetupBZCNCompatibility(self)
     if not BZCN or not isfunction(BZCN.InstallAdapter) or not isfunction(BZCN.GetClass) then return end
 
-    -- Mark the NextBot as an API-managed NPC while deliberately avoiding
-    -- BZCN.ApplyClass, which enables the separate organism-support path.
+    -- Mark the NextBot as managed and apply the registered BZCN zombie
+    -- profile. Native organism ownership is still established separately by
+    -- hg.BZCNNPCSupport.Attach below, never by fabricating a Player character.
     self.BZCNManaged = true
     self.BZCNClass = "ZevilInfected"
     self.PlayerClassName = "ZevilInfected"
