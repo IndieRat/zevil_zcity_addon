@@ -120,6 +120,15 @@ local function SetupBZCNCompatibility(self)
     end
 end
 
+-- StartActivity resets the sequence cycle, so calling it on every AI coroutine
+-- iteration makes the walk/run animation repeatedly jump back to frame one.
+-- Keep the current activity stable until the behavior actually changes.
+function ENT:SetZevilActivity(activity)
+    if self.ZevilCurrentActivity == activity then return end
+    self.ZevilCurrentActivity = activity
+    self:StartActivity(activity)
+end
+
 function ENT:Initialize()
     self:SetModel(GetInfectedModel(self.ZevilModel))
     self:SetHealth(100)
@@ -168,7 +177,7 @@ function ENT:Bite(target)
     if not isAliveTarget(target) or CurTime() < self.NextBite then return end
     if self:GetPos():DistToSqr(target:GetPos()) > 78 * 78 then return end
     self.NextBite = CurTime() + 1.65
-    self:StartActivity(ACT_MELEE_ATTACK1)
+    self:SetZevilActivity(ACT_MELEE_ATTACK1)
     self:EmitSound("npc/zombie/claw_strike" .. math.random(1, 3) .. ".wav", 75, math.random(82, 108))
     local hitPos = target:WorldSpaceCenter()
     util.Decal("Blood", hitPos + Vector(0, 0, 16), hitPos - Vector(0, 0, 48), {self, target})
@@ -201,7 +210,7 @@ end
 function ENT:Feed(corpse)
     if not IsValid(corpse) then return false end
     self.ZevilFeeding = true
-    self:StartActivity(ACT_IDLE)
+    self:SetZevilActivity(ACT_IDLE)
     self.loco:SetDesiredSpeed(0)
     self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 65, 75)
     local finish = CurTime() + 4
@@ -223,7 +232,7 @@ function ENT:RunBehaviour()
         self.Target = target
         if IsValid(target) then
             local critical = self:Health() <= math.max(self:GetMaxHealth(), 1) * 0.22
-            self:StartActivity(critical and ACT_WALK or ACT_RUN)
+            self:SetZevilActivity(critical and ACT_WALK or ACT_RUN)
             -- Critically injured infected drag themselves forward in the procedural
             -- crawl pose rather than sprinting upright with a broken-body silhouette.
             self.loco:SetDesiredSpeed(critical and 34 or (95 + (self.ZevilVirus.Stage or 2) * 7))
@@ -235,12 +244,12 @@ function ENT:RunBehaviour()
         else
             local corpse = self:FindCorpse()
             if IsValid(corpse) then
-                self:StartActivity(ACT_WALK)
+                self:SetZevilActivity(ACT_WALK)
                 self.loco:SetDesiredSpeed(65)
                 self:MoveToPos(corpse:GetPos(), {tolerance = 45, maxage = 2})
                 if IsValid(corpse) and self:GetPos():DistToSqr(corpse:GetPos()) < 55 * 55 then self:Feed(corpse) end
             else
-                self:StartActivity(ACT_WALK)
+                self:SetZevilActivity(ACT_WALK)
                 self.loco:SetDesiredSpeed(45)
                 self:MoveToPos(self:GetPos() + VectorRand() * math.random(100, 250), {tolerance = 30, maxage = 2})
             end
@@ -262,7 +271,7 @@ function ENT:ChaseTarget(target)
         elseif distanceSqr <= 150 * 150 and CurTime() >= self.NextLunge then
             -- Occasional forward lunge breaks up the straight-line shamble.
             self.NextLunge = CurTime() + math.Rand(3.5, 6.5)
-            self:StartActivity(ACT_MELEE_ATTACK1)
+            self:SetZevilActivity(ACT_MELEE_ATTACK1)
             local direction = (target:WorldSpaceCenter() - self:WorldSpaceCenter()):GetNormalized()
             self.loco:SetVelocity(direction * math.Rand(170, 245) + Vector(0, 0, 85))
             self:EmitSound("npc/zombie/zo_attack" .. math.random(1, 2) .. ".wav", 72, math.random(80, 100))
