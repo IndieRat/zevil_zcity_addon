@@ -10,7 +10,7 @@ local function RegisterZevilClasses()
     BZCN.RegisterClass("ZevilInfected", {
         Name = "Zevil Infected",
         PlayerClassName = "ZevilInfected",
-        Model = "models/player/zombie_classic.mdl",
+        Model = "models/player/group03/male_07.mdl",
         Health = 100,
         Speed = 112,
         BaseSpeedOverride = 112,
@@ -20,7 +20,7 @@ local function RegisterZevilClasses()
         EnemyPlayers = true,
         EnemyFactions = {"default", "civilian", "Combine", "Metrocop", "Rebel", "furry", "ZevilRookieCop"},
         FollowAllies = true,
-        ZombieStyle = false,
+        ZombieStyle = true,
         Ranged = false,
         MeleeDamage = 12,
         MeleeRange = 78,
