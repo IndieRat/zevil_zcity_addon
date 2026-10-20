@@ -146,9 +146,16 @@ local function UnlinkZCityFakeRagdoll(host, rag)
     end
     if not IsValid(host) or not host.ZevilFakeRagdollLinkSaved then return end
 
-    local ownsLink = host.FakeRagdoll == rag
-        or (host.GetNWEntity and host:GetNWEntity("FakeRagdoll") == rag)
-        or (host.GetNW2Entity and host:GetNW2Entity("FakeRagdoll") == rag)
+    local currentField = host.FakeRagdoll
+    local currentNW = host.GetNWEntity and host:GetNWEntity("FakeRagdoll") or NULL
+    local currentNW2 = host.GetNW2Entity and host:GetNW2Entity("FakeRagdoll") or NULL
+    local hasOwnedLink = currentField == rag or currentNW == rag or currentNW2 == rag
+    -- If BZCN or another system has already replaced any part of the owner
+    -- link with its own different body, leave that newer body untouched.
+    local hasForeignLink = (IsValid(currentField) and currentField ~= rag)
+        or (IsValid(currentNW) and currentNW ~= rag)
+        or (IsValid(currentNW2) and currentNW2 ~= rag)
+    local ownsLink = hasOwnedLink and not hasForeignLink
     if ownsLink then
         local previousNW = host.ZevilFakeRagdollPreviousNW
         local previousNW2 = host.ZevilFakeRagdollPreviousNW2
@@ -324,7 +331,6 @@ function Fake.Attach(host, forceRefresh)
     rag.ZevilPuppetOwner = host
     if rag.SetNW2Entity then rag:SetNW2Entity("ZevilPuppetOwner", host) end
     rag.ZevilPuppetConstraint = constraint.NoCollide(host, rag, 0, 0)
-    MirrorZCityWounds(host, rag, true)
 
     host.ZevilFakePuppet = rag
     if host.SetNW2Entity then host:SetNW2Entity("ZevilVisibleBody", rag) end
