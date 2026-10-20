@@ -215,19 +215,32 @@ hook.Add("Zevil_Infected", "Zevil_PlayerConversionFeedback", function(ent)
     ent:ChatPrint("[Zevil] At stage 3, use the console command zevil_bite to infect nearby targets.")
 end)
 
--- Stage 1 -> 2 is the point where the infection becomes fully established.
--- Give a short, strong regeneration burst to both players and infected organisms.
-hook.Add("Zevil_StageChanged", "Zevil_StageTwoRegeneration", function(ent, stage)
-    if not IsValid(ent) or stage ~= 2 then return end
-    local v = ent.ZevilVirus
-    if not istable(v) or not v.Infected then return end
-    v.StageTwoRegenUntil = CurTime() + 8
-    v.NextStageTwoRegen = CurTime()
-    if ent:IsPlayer() and ent:Alive() or not ent:IsPlayer() and ent:Health() > 0 then
-        ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(8, math.floor(ent:GetMaxHealth() * 0.2))))
-    end
-end)
+-- Stage 1 -> Stage 2 starts one short regeneration burst. Use the entity's
+-- health as the source of truth, and mirror it to an existing native organism
+-- table so Z-City's next Org Think pass stays synchronized.
+local function SyncZevilOrganismHealth(ent)
+    if not IsValid(ent) then return end
+    local org = ent.organism
+    if istable(org) then org.health = ent:Health() end
+end
 
+local function StartStageTwoRegeneration(ent, v)
+    if not IsValid(ent) or not istable(v) or not v.Infected
+        or v.StageTwoRegenStarted then return end
+    if ent:Health() <= 0 or (ent:IsPlayer() and not ent:Alive()) then return end
+
+    v.StageTwoRegenStarted = true
+    v.StageTwoRegenUntil = CurTime() + 8
+    v.NextStageTwoRegen = CurTime() + 1
+    ent:SetHealth(math.min(ent:GetMaxHealth(),
+        ent:Health() + math.max(8, math.floor(ent:GetMaxHealth() * 0.2))))
+    SyncZevilOrganismHealth(ent)
+end
+
+hook.Add("Zevil_StageChanged", "Zevil_StageTwoRegeneration", function(ent, stage)
+    if stage ~= 2 or not IsValid(ent) then return end
+    StartStageTwoRegeneration(ent, ent.ZevilVirus)
+end)
 hook.Add("Zevil_StageChanged", "Zevil_PlayerStageFeedback", function(ent, stage)
     if not IsValid(ent) or not ent:IsPlayer() then return end
     local messages = {
@@ -239,19 +252,8 @@ hook.Add("Zevil_StageChanged", "Zevil_PlayerStageFeedback", function(ent, stage)
     if messages[stage] then ent:ChatPrint(messages[stage]) end
 end)
 
--- Apply stage penalties to the movement command rather than persistent player
--- speed settings, so a cure restores ordinary movement without cleanup races.
-hook.Add("SetupMove", "Zevil_InfectedPlayerMovement", function(ply, mv)
-    if not IsValid(ply) or not ply:Alive() then return end
-    local v = ply.ZevilVirus
-    if not (istable(v) and v.Infected) then return end
-    local stage = math.Clamp(tonumber(v.Stage) or 1, 1, 5)
-    local multiplier = stage >= 5 and 0.74 or stage >= 4 and 0.86 or stage >= 3 and 0.94 or 1
-    if multiplier < 1 then
-        mv:SetMaxSpeed(mv:GetMaxSpeed() * multiplier)
-        mv:SetMaxClientSpeed(mv:GetMaxClientSpeed() * multiplier)
-    end
-end)
+-- Player speed is handled by lua/autorun/sh_zevil_zcity_class.lua through
+-- Z-City's HG_MovementCalc_2 multiplier chain, with native class cleanup.
 
 hook.Add("PlayerInitialSpawn", "ZevilSyncOnJoin", function(ply)
     timer.Simple(1, function() if IsValid(ply) then replicate(ply) end end)
@@ -286,18 +288,15 @@ timer.Create("ZevilVirusThink", 1, 0, function()
             continue
         end
         if (v.Stage or 1) >= 2 and now < (v.StageTwoRegenUntil or 0)
-            and now >= (v.NextStageTwoRegen or 0) then
-            ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(2, math.floor(ent:GetMaxHealth() * 0.04))))
-            v.NextStageTwoRegen = now + 0.5
+            and now >= (v.NextStageTwoRegen or math.huge) then
+            ent:SetHealth(math.min(ent:GetMaxHealth(),
+                ent:Health() + math.max(3, math.floor(ent:GetMaxHealth() * 0.05))))
+            SyncZevilOrganismHealth(ent)
+            v.NextStageTwoRegen = now + 1
         end
         if now >= (v.NextStage or math.huge) and (v.Stage or 1) < 5 then
             v.Stage = v.Stage + 1
             v.NextStage = now + cv.zevil_progression:GetFloat()
-            if v.Stage == 2 then
-                v.StageTwoRegenUntil = now + 8
-                v.NextStageTwoRegen = now
-                ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(8, math.floor(ent:GetMaxHealth() * 0.2))))
-            end
             replicate(ent)
             hook.Run("Zevil_StageChanged", ent, v.Stage)
         end
