@@ -41,6 +41,109 @@ local function InstallManagedIdentity(ent, className, faction)
     return true
 end
 
+local function AttachNativeZCityOrganismOnly(ent)
+    local api = hg and hg.organism
+    if not IsValid(ent) or ent:IsPlayer() or not (istable(api)
+        and istable(api.list) and isfunction(api.Add) and isfunction(api.Clear)) then
+        return false
+    end
+    if not (BZCN and isfunction(BZCN.InstallAdapter)
+        and isfunction(BZCN.IsManaged) and BZCN.IsManaged(ent)) then
+        return false
+    end
+
+    local org = ent.organism
+    local registered = istable(org) and api.list[ent] == org and org.owner == ent
+    if not registered then
+        local ok, result = pcall(api.Add, ent)
+        if not ok or not istable(ent.organism) then
+            if not ent.ZevilNativeOrganismWarned then
+                ent.ZevilNativeOrganismWarned = true
+                ErrorNoHalt("[Zevil] hg.organism.Add failed for "
+                    .. tostring(ent:GetClass()) .. ": " .. tostring(result) .. "\n")
+            end
+            return false
+        end
+        org = ent.organism
+        ent.ZevilNativeOrganismNeedsClear = true
+    end
+
+    -- Run Z-City's actual Org Clear initialization after Add. If load order makes
+    -- a required Clear hook throw, retain the registered table and retry Clear;
+    -- don't repeatedly call Add and wipe any wounds that were already recorded.
+    if ent.ZevilNativeOrganismNeedsClear then
+        local ok, result = pcall(api.Clear, org)
+        if not ok then
+            if not ent.ZevilNativeOrganismWarned then
+                ent.ZevilNativeOrganismWarned = true
+                ErrorNoHalt("[Zevil] hg.organism.Clear failed for "
+                    .. tostring(ent:GetClass()) .. ": " .. tostring(result) .. "\n")
+            end
+            return false
+        end
+        ent.ZevilNativeOrganismNeedsClear = nil
+        ent.ZevilNativeOrganismWarned = nil
+    end
+
+    org.owner = ent
+    org.fakePlayer = true
+    org.alive = ent:Health() > 0
+    org.entindex = ent:EntIndex()
+    org.health = tonumber(org.health) or math.max(ent:Health(), 0)
+    org.maxHealth = tonumber(org.maxHealth) or math.max(tonumber(ent:GetMaxHealth()) or 100, 1)
+
+    -- Native Org Clear modules normally populate these. Fill only missing fields
+    -- so partial module load cannot make the official wound hook index nil tables.
+    local defaults = {
+        blood = 5000, maxBlood = 5000, pain = 0, shock = 0, immobilization = 0,
+        wounds = {}, arterialwounds = {}, dmgstack = {},
+        bulletwounds = 0, slashwounds = 0, stabwounds = 0, bruises = 0,
+        burns = 0, explosionwounds = 0,
+        larm = 0, rarm = 0, lleg = 0, rleg = 0, chest = 0, pelvis = 0,
+        spine1 = 0, spine2 = 0, spine3 = 0, skull = 0, brain = 0,
+        liver = 0, intestines = 0, heart = 0, stomach = 0,
+        lungsL = {0, 0}, lungsR = {0, 0}
+    }
+    for key, value in pairs(defaults) do
+        if org[key] == nil then
+            org[key] = istable(value) and table.Copy(value) or value
+        end
+    end
+
+    ent.organism = org
+    ent.BZCN_Organism = org
+    api.list[ent] = org
+    ent.IsOrganism = true
+    ent.hg_organism = true
+    ent.ZevilZCitySupportAttached = true
+    ent.ZevilZCitySupportNative = true
+    ent.ZevilZCitySupportMode = "native-only"
+
+    if isfunction(ent.SetNetVar) then
+        pcall(ent.SetNetVar, ent, "wounds", org.wounds)
+        pcall(ent.SetNetVar, ent, "arterialwounds", org.arterialwounds)
+    elseif BZCN and isfunction(BZCN.SetNetVar) then
+        pcall(BZCN.SetNetVar, ent, "wounds", org.wounds)
+        pcall(BZCN.SetNetVar, ent, "arterialwounds", org.arterialwounds)
+    end
+
+    if not ent.ZevilNativeOrganismCleanupInstalled and ent.CallOnRemove then
+        ent.ZevilNativeOrganismCleanupInstalled = true
+        ent:CallOnRemove("ZevilNativeOrganismCleanup", function(removed)
+            local currentAPI = hg and hg.organism
+            if not (istable(currentAPI) and istable(currentAPI.list)
+                and currentAPI.list[removed] == removed.organism) then return end
+            if isfunction(currentAPI.Remove) then
+                pcall(currentAPI.Remove, removed)
+            else
+                currentAPI.list[removed] = nil
+            end
+        end)
+    end
+
+    return true
+end
+
 function Zevil.AttachZCityNPCSupport(ent, className, faction)
     if not IsValid(ent) or ent:IsPlayer() then return false end
     if ent.ZevilZCitySupportRetryScheduled then return true end
@@ -66,6 +169,7 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                 ent.ZevilZCitySupportAttached = true
                 ent.ZevilZCitySupportNative = state.usesZCityOrganism == true
                 if ent.ZevilZCitySupportNative then
+                    ent.ZevilZCitySupportMode = "bzcn"
                     ent.ZevilZCitySupportRetryScheduled = nil
                     ent.IsOrganism = true
                     ent.hg_organism = true
@@ -81,6 +185,29 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                 ent.ZevilZCitySupportWarned = true
                 ErrorNoHalt("[Zevil] Z-City NPC injury attachment failed for "
                     .. tostring(ent:GetClass()) .. ": " .. tostring(state) .. "\n")
+            end
+        end
+
+        -- If the optional BZCN injury bridge isn't mounted, use Z-City's
+        -- own Add/Clear/list lifecycle directly. This still creates a real native
+        -- organism for Z-City's EntityTakeDamage wound pipeline; it intentionally
+        -- does not pretend to provide BZCN's extra limb-tracking/downed recovery.
+        if not (support and isfunction(support.Attach)) and nativeAPIReady then
+            local ok, attached = pcall(AttachNativeZCityOrganismOnly, ent)
+            if ok and attached then
+                ent.ZevilZCitySupportRetryScheduled = nil
+                ent.ZevilZCitySupportWarned = nil
+                if not ent.ZevilZCitySupportLogged then
+                    ent.ZevilZCitySupportLogged = true
+                    print("[Zevil] Native Z-City organism/wounds attached (native-only; "
+                        .. "BZCN downed recovery unavailable): "
+                        .. ent:GetClass() .. "#" .. ent:EntIndex())
+                end
+                return
+            elseif not ok and not ent.ZevilZCitySupportWarned then
+                ent.ZevilZCitySupportWarned = true
+                ErrorNoHalt("[Zevil] Native-only organism attachment failed for "
+                    .. tostring(ent:GetClass()) .. ": " .. tostring(attached) .. "\n")
             end
         end
 
@@ -162,7 +289,9 @@ timer.Create("Zevil_ZCitySupportWatchdog", 5, 0, function()
             if not IsValid(ent) then continue end
             local registered = nativeAPIReady and ent.organism ~= nil
                 and nativeList[ent] == ent.organism
-            if registered and ent.ZevilZCitySupportAttached == true then
+            local canUpgradeNativeOnly = ent.ZevilZCitySupportMode == "native-only"
+                and support and isfunction(support.Attach)
+            if registered and ent.ZevilZCitySupportAttached == true and not canUpgradeNativeOnly then
                 ent.ZevilZCitySupportNative = true
                 ent.IsOrganism = true
                 ent.hg_organism = true
