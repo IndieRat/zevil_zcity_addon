@@ -10,6 +10,7 @@ Zevil is an addon, not a fork of Z-City. Its custom virus state lives in `ent.Ze
 - Bite-based transmission, configurable incubation/progression, and server commands.
 - Player visual mutation overlay with sickly tint, staged material/bone deformation, and infection HUD.
 - Spawnable Zevil infected NextBot with explicit NPC/Entities spawn-menu registration, valid mounted-model fallback, target acquisition, pursuit, bite attacks, wandering, corpse-feeding, sickly coloration, mouth-blood visuals, and occasional lunges.
+- Procedural infected fake-ragdoll puppets: AI/pathfinding remains on the NextBot while a separate physics ragdoll tracks its animation through soft shadow control, with an uneven slouch, head sway, and asymmetric arms/legs. Converted human NPCs and manually spawned infected use the same controller; the active puppet becomes the corpse on death instead of popping into a second default-pose ragdoll. Models without the required ValveBiped bones or usable physics fall back to their normal rendering.
 - Single-use `weapon_zevil_virus_syringe` SWEP in **Weapons → Zevil - Biohazard**. Primary attack injects the wielder; secondary attack injects a living target at close range. Human NPCs convert into infected AI through the virus lifecycle.
 - Fully infected human NPCs are converted into roaming infected while preserving their model, skin, bodygroups, position, and approximate health.
 - Infected players retain their player model and control; from stage 3 onward, `zevil_bite` lets them attack nearby targets.
@@ -47,5 +48,8 @@ Spawn **NPCs → Zevil - Resident Evil → Zevil Infected**, or use the scripted
 - `zevil_player_visuals` (default 1)
 - `zevil_mutation_strength` (default 1)
 - `zevil_max_infected` (default 24)
+- `zevil_fake_infected` (default 1; set to 0 to disable puppet rendering and restore normal NextBot models)
+- `zevil_fake_infected_rate` (default 20 updates per second; adjustable from 5 to 35)
+- `zevil_fake_infected_strength` (default 1; adjustable from 0 to 2)
 
 The vendored API plus adapter-chain, AI-manager, combat-actor, equipment-AI, inventory, and runtime weapon bridges are based on the pinned BZCN commit listed above. This still does not vendor every BZCN gameplay subsystem: notably the full task/social/squad/vehicle suite and the native organism/injury-support module. The NPC base only advertises native organism state when `hg.BZCNNPCSupport.Attach` exists, so the standalone Zevil API does not invent a Z-City organism table. If the original BZCN addon is installed, its optional subsystems can still provide their hooks. These changes have not been validated in a live GMod/Z-City server. The horde behavior is currently emergent from multiple infected NextBots independently acquiring nearby living targets; there is not yet a dedicated pack director, sound-attraction system, or cinematic horde scheduler. Test on a staging server before public deployment. Model/material behavior and NextBot activity availability vary by mounted content.
