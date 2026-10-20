@@ -67,6 +67,11 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                     ent.IsOrganism = true
                     ent.hg_organism = true
                     ent.ZevilZCitySupportWarned = nil
+                    if not ent.ZevilZCitySupportLogged then
+                        ent.ZevilZCitySupportLogged = true
+                        print("[Zevil] Native Z-City wounds attached: "
+                            .. ent:GetClass() .. "#" .. ent:EntIndex())
+                    end
                     return
                 end
             elseif not ok and not ent.ZevilZCitySupportWarned then
