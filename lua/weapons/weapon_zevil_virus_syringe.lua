@@ -94,21 +94,31 @@ function SWEP:Inject(target, owner)
         return
     end
 
+    -- Capture display facts before Z.Infect: fully infected human NPCs are
+    -- replaced by a roaming NextBot inside the infection hook.
+    local injectingSelf = target == owner
+    local targetIsPlayer = target:IsPlayer()
+    local targetName = target.BZCNDisplayName
+        or (targetIsPlayer and target:Nick() or target:GetClass())
+    target:EmitSound("snd_jack_hmcd_needleprick.wav", 62, math.random(96, 104))
+
     local ok = Zevil.Infect(target, owner)
     if not ok then
         Tell(owner, "Injection failed. The virus system may be disabled or the target may be invalid.")
         return
     end
 
-    target:EmitSound("snd_jack_hmcd_needleprick.wav", 62, math.random(96, 104))
-    if target:IsPlayer() and target ~= owner then
-        target:ViewPunch(Angle(-1.5, math.Rand(-1, 1), 0))
-        Tell(target, "You have been injected with an unknown virus.")
-    elseif target == owner then
-        target:ViewPunch(Angle(-2, math.Rand(-1.5, 1.5), 0))
+    if injectingSelf then
+        if IsValid(target) then target:ViewPunch(Angle(-2, math.Rand(-1.5, 1.5), 0)) end
         Tell(owner, "You injected the Zevil virus into yourself.")
+    elseif targetIsPlayer then
+        if IsValid(target) then
+            target:ViewPunch(Angle(-1.5, math.Rand(-1, 1), 0))
+            Tell(target, "You have been injected with an unknown virus.")
+        end
+        Tell(owner, "Injected " .. targetName .. ".")
     else
-        Tell(owner, "Injected " .. (target.BZCNDisplayName or target:GetClass()) .. ".")
+        Tell(owner, "Injected " .. targetName .. ".")
     end
 
     hook.Run("Zevil_VirusInjected", target, owner)
