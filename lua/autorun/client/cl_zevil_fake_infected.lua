@@ -16,8 +16,23 @@ end
 
 function Zevil.InfectedFake.GetOwner(body)
     if not IsValid(body) then return nil end
+
+    -- Resolve Zevil's own puppet first, then the BZCN adapter owner, then the
+    -- native Z-City fake-ragdoll "ply" convention used by third-party effects.
     local owner = body.GetNW2Entity and body:GetNW2Entity("ZevilPuppetOwner") or nil
-    if not IsValid(owner) then owner = body:GetNW2Entity("BZCNNPCOwner") end
+    if not IsValid(owner) and body.GetNW2Entity then
+        owner = body:GetNW2Entity("BZCNNPCOwner")
+    end
+    if not IsValid(owner) and body.GetNWEntity then
+        owner = body:GetNWEntity("ply")
+    end
+    if not IsValid(owner) and body.GetNetVar then
+        local ok, value = pcall(body.GetNetVar, body, "ply", nil)
+        if ok then owner = value end
+    end
+    if not IsValid(owner) and body.GetNWEntity then
+        owner = body:GetNWEntity("BZCNNPCOwner")
+    end
     return IsValid(owner) and owner or nil
 end
 local puppets = setmetatable({}, {__mode = "k"})
