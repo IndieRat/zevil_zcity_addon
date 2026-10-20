@@ -215,6 +215,19 @@ hook.Add("Zevil_Infected", "Zevil_PlayerConversionFeedback", function(ent)
     ent:ChatPrint("[Zevil] At stage 3, use the console command zevil_bite to infect nearby targets.")
 end)
 
+-- Stage 1 -> 2 is the point where the infection becomes fully established.
+-- Give a short, strong regeneration burst to both players and infected organisms.
+hook.Add("Zevil_StageChanged", "Zevil_StageTwoRegeneration", function(ent, stage)
+    if not IsValid(ent) or stage ~= 2 then return end
+    local v = ent.ZevilVirus
+    if not istable(v) or not v.Infected then return end
+    v.StageTwoRegenUntil = CurTime() + 8
+    v.NextStageTwoRegen = CurTime()
+    if ent:IsPlayer() and ent:Alive() or not ent:IsPlayer() and ent:Health() > 0 then
+        ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(8, math.floor(ent:GetMaxHealth() * 0.2))))
+    end
+end)
+
 hook.Add("Zevil_StageChanged", "Zevil_PlayerStageFeedback", function(ent, stage)
     if not IsValid(ent) or not ent:IsPlayer() then return end
     local messages = {
@@ -244,8 +257,8 @@ hook.Add("PlayerInitialSpawn", "ZevilSyncOnJoin", function(ply)
     timer.Simple(1, function() if IsValid(ply) then replicate(ply) end end)
 end)
 
-hook.Add("PlayerDeath", "ZevilKeepVirusAcrossDeath", function(ply)
-    if istable(ply.ZevilVirus) then ply.ZevilVirus.DeadAt = CurTime() end
+hook.Add("PlayerDeath", "ZevilDisableInfectionOnDeath", function(ply)
+    if istable(ply.ZevilVirus) then Z.Cure(ply) end
 end)
 
 hook.Add("PlayerSpawn", "ZevilRestoreAfterSpawn", function(ply)
@@ -265,10 +278,26 @@ timer.Create("ZevilVirusThink", 1, 0, function()
             if v.Exposure <= 0 then ent.ZevilVirus = nil end
             continue
         end
-        if ent:IsPlayer() and not ent:Alive() then continue end
+        -- A dead host is no longer an active infected organism. Clear both the
+        -- authoritative table and replicated state instead of carrying infection
+        -- through a corpse/respawn cycle.
+        if ent:Health() <= 0 or (ent:IsPlayer() and not ent:Alive()) then
+            Z.Cure(ent)
+            continue
+        end
+        if (v.Stage or 1) >= 2 and now < (v.StageTwoRegenUntil or 0)
+            and now >= (v.NextStageTwoRegen or 0) then
+            ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(2, math.floor(ent:GetMaxHealth() * 0.04))))
+            v.NextStageTwoRegen = now + 0.5
+        end
         if now >= (v.NextStage or math.huge) and (v.Stage or 1) < 5 then
             v.Stage = v.Stage + 1
             v.NextStage = now + cv.zevil_progression:GetFloat()
+            if v.Stage == 2 then
+                v.StageTwoRegenUntil = now + 8
+                v.NextStageTwoRegen = now
+                ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + math.max(8, math.floor(ent:GetMaxHealth() * 0.2))))
+            end
             replicate(ent)
             hook.Run("Zevil_StageChanged", ent, v.Stage)
         end
