@@ -24,8 +24,6 @@ local strength = GetConVar("zevil_fake_infected_strength") or CreateConVar(
 )
 
 local active = setmetatable({}, {__mode = "k"})
-local EMPTY_ANGLE = Angle(0, 0, 0)
-
 local function IsInfectedBot(ent)
     return IsValid(ent) and ent:GetClass() == "npc_zevil_infected"
 end
@@ -203,9 +201,12 @@ local function ControlPuppet(host, rag, now)
 
         local ragBone = rag:TranslatePhysBoneToBone(physIndex)
         if not ragBone or ragBone < 0 then continue end
-        local boneName = string.lower(rag:GetBoneName(ragBone) or "")
+        local boneName = rag:GetBoneName(ragBone) or ""
         if boneName == "" then continue end
+        local lowerBoneName = string.lower(boneName)
 
+        -- Keep the original case for LookupBone; only normalize names used by
+        -- the procedural pose table, since ValveBiped bone lookup is case-sensitive.
         local sourceBone = host:LookupBone(boneName)
         if not sourceBone then continue end
         local matrix = host:GetBoneMatrix(sourceBone)
@@ -215,7 +216,7 @@ local function ControlPuppet(host, rag, now)
             matrix:GetTranslation(), matrix:GetAngles(), rootPos, rootAng
         )
         local targetAng = ApplyInfectedPose(
-            boneName, localAng, now, phase, movement, poseAmount
+            lowerBoneName, localAng, now, phase, movement, poseAmount
         )
         local targetPos, targetWorldAng = LocalToWorld(localPos, targetAng, rootPos, rootAng)
 
