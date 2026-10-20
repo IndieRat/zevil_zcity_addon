@@ -132,6 +132,7 @@ end
 -- Keep NextBot locomotion pose parameters synchronized with path movement.
 -- This prevents newly converted player-model bots from animating sideways.
 function ENT:BodyUpdate()
+    if self.BZCNNPCDowned then return end
     self:BodyMoveXY()
 end
 
@@ -153,6 +154,9 @@ function ENT:Initialize()
     self:SetNW2Bool("ZevilInfected", true)
     self:SetNW2Int("ZevilStage", 2)
     SetupBZCNCompatibility(self)
+    if Zevil and isfunction(Zevil.AttachZCityNPCSupport) then
+        Zevil.AttachZCityNPCSupport(self, "ZevilInfected", "zombie")
+    end
     self.NextBite = 0
     self.NextLunge = 0
     self.NextSearch = 0
@@ -234,6 +238,10 @@ end
 function ENT:RunBehaviour()
     while true do
         if not IsValid(self) or self:Health() <= 0 then return end
+        if self.BZCNNPCDowned then
+            coroutine.wait(0.15)
+            continue
+        end
         local target = self:FindVictim()
         self.Target = target
         if IsValid(target) then
@@ -270,7 +278,7 @@ function ENT:ChaseTarget(target)
     path:SetGoalTolerance(42)
     path:Compute(self, target:GetPos())
     if not path:IsValid() then return end
-    while path:IsValid() and IsValid(target) and isAliveTarget(target) do
+    while path:IsValid() and IsValid(target) and isAliveTarget(target) and not self.BZCNNPCDowned do
         local distanceSqr = self:GetPos():DistToSqr(target:GetPos())
         if distanceSqr <= 75 * 75 then
             self:Bite(target)
