@@ -23,6 +23,9 @@ function Zevil.InfectedFake.GetOwner(body)
     if not IsValid(owner) and body.GetNW2Entity then
         owner = body:GetNW2Entity("BZCNNPCOwner")
     end
+    if not IsValid(owner) and body.GetNW2Entity then
+        owner = body:GetNW2Entity("ply")
+    end
     if not IsValid(owner) and body.GetNWEntity then
         owner = body:GetNWEntity("ply")
     end
