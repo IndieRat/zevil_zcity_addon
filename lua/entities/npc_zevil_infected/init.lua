@@ -39,7 +39,10 @@ local MODELS = {
 }
 
 local function GetInfectedModel(requested)
-    if isstring(requested) and requested ~= "" and util.IsValidModel(requested) then
+    if isstring(requested) and requested ~= ""
+        and (string.StartWith(string.lower(requested), "models/player/group01/")
+            or string.StartWith(string.lower(requested), "models/player/group03/"))
+        and util.IsValidModel(requested) then
         return requested
     end
     local available = {}
@@ -219,8 +222,11 @@ function ENT:RunBehaviour()
         local target = self:FindVictim()
         self.Target = target
         if IsValid(target) then
-            self:StartActivity(ACT_RUN)
-            self.loco:SetDesiredSpeed(95 + (self.ZevilVirus.Stage or 2) * 7)
+            local critical = self:Health() <= math.max(self:GetMaxHealth(), 1) * 0.22
+            self:StartActivity(critical and ACT_WALK or ACT_RUN)
+            -- Critically injured infected drag themselves forward in the procedural
+            -- crawl pose rather than sprinting upright with a broken-body silhouette.
+            self.loco:SetDesiredSpeed(critical and 34 or (95 + (self.ZevilVirus.Stage or 2) * 7))
             if self:CanSeeTarget(target) then
                 self:ChaseTarget(target)
             else
