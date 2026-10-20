@@ -259,12 +259,13 @@ local function DescribeZevilNPC(ent)
     local body = IsValid(puppet) and puppet or (IsValid(downed) and downed or ent)
     local bodyWounds = IsValid(body) and CountZevilWounds(body, "wounds") or 0
     print(string.format(
-        "[Zevil] %s#%d model=%s class=%s zombieStyle=%s appearanceCatalogue=%s attached=%s nativeFlag=%s registry=%s hostWounds=%d hostArterial=%d body=%s bodyWounds=%d",
+        "[Zevil] %s#%d model=%s class=%s zombieStyle=%s appearanceCatalogue=%s attached=%s mode=%s nativeFlag=%s registry=%s hostWounds=%d hostArterial=%d body=%s bodyWounds=%d",
         ent:GetClass(), ent:EntIndex(), tostring(ent:GetModel()),
         tostring(ent.BZCNClass or ent.PlayerClassName or "none"),
         tostring(profile.ZombieStyle == true),
         tostring(ent.ZevilHGAppearance == true),
         tostring(ent.ZevilZCitySupportAttached == true),
+        tostring(ent.ZevilZCitySupportMode or "none"),
         tostring(ent.ZevilZCitySupportNative == true),
         tostring(registered),
         CountZevilWounds(ent, "wounds"),
@@ -278,6 +279,7 @@ end
 -- spawned before the injury module loads can gain real native support later.
 timer.Create("Zevil_ZCitySupportWatchdog", 5, 0, function()
     local api = hg and hg.organism
+    local support = hg and hg.BZCNNPCSupport
     local nativeList = api and api.list
     local nativeAPIReady = istable(nativeList)
         and isfunction(api.Add) and isfunction(api.Clear)
