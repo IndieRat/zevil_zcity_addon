@@ -56,6 +56,70 @@ local function CopyAppearance(source, rag)
     -- The ragdoll already uses the same model, skin, bodygroups and authored materials.
 end
 
+local function MirrorZCityWounds(host, rag, force)
+    if not IsValid(host) or not IsValid(rag) then return end
+    local org = host.organism or host.BZCN_Organism
+    if not istable(org) then return end
+
+    local wounds = istable(org.wounds) and org.wounds or nil
+    local arterial = istable(org.arterialwounds) and org.arterialwounds or nil
+    if (not wounds or not arterial) and isfunction(host.GetNetVar) then
+        wounds = wounds or host:GetNetVar("wounds", nil)
+        arterial = arterial or host:GetNetVar("arterialwounds", nil)
+    end
+    if not istable(wounds) then wounds = {} end
+    if not istable(arterial) then arterial = {} end
+
+    local schedule = tonumber(org.sendPlyTime)
+    local changed = force == true
+        or rag.ZevilWoundSchedule ~= schedule
+        or rag.ZevilWoundSource ~= wounds
+        or rag.ZevilArterialWoundSource ~= arterial
+        or CurTime() >= (rag.ZevilNextWoundRefresh or 0)
+    if not changed then return end
+
+    -- Give the visible puppet the same wound NetVars that Z-City/BZCN publishes
+    -- on the living NextBot. Mods such as ABL can then read GetNetVar("wounds")
+    -- from the rendered ragdoll rather than searching for a hidden host.
+    if BZCN and isfunction(BZCN.InstallAdapter) and not rag.ZevilBZCNAdapterInstalled then
+        local ok = pcall(BZCN.InstallAdapter, rag)
+        rag.ZevilBZCNAdapterInstalled = ok
+    end
+    if isfunction(rag.SetNetVar) then
+        pcall(rag.SetNetVar, rag, "wounds", table.Copy(wounds))
+        pcall(rag.SetNetVar, rag, "arterialwounds", table.Copy(arterial))
+    elseif BZCN and isfunction(BZCN.SetNetVar) then
+        pcall(BZCN.SetNetVar, rag, "wounds", table.Copy(wounds))
+        pcall(BZCN.SetNetVar, rag, "arterialwounds", table.Copy(arterial))
+    end
+
+    rag.organism = org
+    rag.BZCN_Organism = org
+    rag.BZCNNPCOwner = host
+    if rag.SetNW2Entity then rag:SetNW2Entity("BZCNNPCOwner", host) end
+    if rag.SetNWEntity then rag:SetNWEntity("BZCNNPCOwner", host) end
+    rag.ZevilWoundSchedule = schedule
+    rag.ZevilWoundSource = wounds
+    rag.ZevilArterialWoundSource = arterial
+    rag.ZevilNextWoundRefresh = CurTime() + 0.75
+end
+
+local function SuspendPuppetForZCityDowned(host, puppet)
+    active[host] = nil
+    host.ZevilFakePuppet = nil
+    if IsValid(puppet) then
+        puppet.ZevilPuppetOwner = nil
+        puppet:SetNW2Bool("ZevilFakePuppet", false)
+        SafeRemoveEntity(puppet)
+    end
+
+    -- BZCN's injury support owns the real downed ragdoll and recovery animation.
+    -- Never show our upright shadow puppet alongside that physical body.
+    host:SetNoDraw(true)
+    host:DrawShadow(false)
+    host.ZevilFakeUsingZCityDowned = true
+end
+
 function Fake.Detach(host, keepCorpse)
     if not IsValid(host) then return nil end
 
@@ -113,6 +177,7 @@ function Fake.Attach(host, forceRefresh)
     rag:SetNW2Int("ZevilStage", host:GetNW2Int("ZevilStage", 2))
     rag.ZevilPuppetOwner = host
     rag.ZevilPuppetConstraint = constraint.NoCollide(host, rag, 0, 0)
+    MirrorZCityWounds(host, rag, true)
 
     host.ZevilFakePuppet = rag
     host:SetNoDraw(true)
@@ -333,6 +398,17 @@ hook.Add("InitPostEntity", "Zevil_FakeInfected_AttachExisting", function()
     end
 end)
 
+hook.Add("Org Think", "Zevil_FakeInfected_MirrorZCityWounds", function(owner, org)
+    if not IsValid(owner) or owner:GetClass() ~= "npc_zevil_infected" or not istable(org) then return end
+    timer.Simple(0, function()
+        if not IsValid(owner) or owner.organism ~= org then return end
+        local puppet = owner.ZevilFakePuppet
+        if IsValid(puppet) and puppet.ZevilPuppetOwner == owner then
+            MirrorZCityWounds(owner, puppet, true)
+        end
+    end)
+end)
+
 hook.Add("Zevil_HumanNPCConverted", "Zevil_FakeInfected_RefreshConvertedModel", function(_, infected)
     -- The conversion routine sets model/skin/bodygroups synchronously after Spawn;
     -- the delayed attach therefore sees the final model and stays idempotent.
@@ -348,7 +424,7 @@ local function GetPuppetMouthPosition(host, rag)
             local phys = rag:GetPhysicsObjectNum(physBone)
             if IsValid(phys) then
                 local pos, ang = phys:GetPos(), phys:GetAngles()
-                return pos + ang:Forward() * 4 - ang:Up() * 3
+                return pos + ang:Forward() * 4 - ang:Up() * 3, ang
             end
         end
     end
@@ -356,14 +432,17 @@ local function GetPuppetMouthPosition(host, rag)
     local hostHead = host:LookupBone("ValveBiped.Bip01_Head1")
     if hostHead and isfunction(host.GetBonePosition) then
         local pos = host:GetBonePosition(hostHead)
-        if isvector(pos) and pos ~= vector_origin then return pos end
+        if isvector(pos) and pos ~= vector_origin then
+            local matrix = host:GetBoneMatrix(hostHead)
+            return pos, matrix and matrix:GetAngles() or host:GetAngles()
+        end
     end
-    return host:WorldSpaceCenter() + Vector(0, 0, 20)
+    return host:WorldSpaceCenter() + Vector(0, 0, 20), host:GetAngles()
 end
 
 local function EmitZCityFalseMouthBleed(host, rag)
     if not IsValid(host) or not IsValid(rag) then return end
-    local mouth = GetPuppetMouthPosition(host, rag)
+    local mouth, headAng = GetPuppetMouthPosition(host, rag)
 
     -- Use Z-City's existing blood-particle network message when the organism
     -- particle module registered it. This is presentation only: no fake
@@ -371,9 +450,14 @@ local function EmitZCityFalseMouthBleed(host, rag)
     if util.NetworkStringToID("hg_bloodimpact") > 0 then
         net.Start("hg_bloodimpact")
         net.WriteVector(mouth)
-        net.WriteVector(Vector(0, 0, 0.045))
-        net.WriteFloat(0.2)
-        net.WriteInt(1, 8)
+        -- Z-City's client receiver multiplies this vector by 500 and expects
+        -- a multiplier of at least 1. A sub-one value can produce an invalid
+        -- random range and silently prevent the effect from spawning.
+        local flow = headAng and (-headAng:Forward() * 0.02 + Vector(0, 0, 0.035))
+            or Vector(0, 0, 0.035)
+        net.WriteVector(flow)
+        net.WriteFloat(1)
+        net.WriteInt(host:GetNW2Int("ZevilStage", 2) >= 4 and 2 or 1, 8)
         net.Broadcast()
         return
     end
@@ -406,6 +490,12 @@ hook.Add("Think", "Zevil_FakeInfected_Control", function()
             continue
         end
 
+        if host.BZCNNPCDowned and IsValid(host.BZCNNPCRagdoll) then
+            SuspendPuppetForZCityDowned(host, rag)
+            continue
+        end
+
+        MirrorZCityWounds(host, rag, false)
         if host:GetNW2Int("ZevilStage", 2) >= 2
             and now >= (host.ZevilNextMouthBleed or 0) then
             EmitZCityFalseMouthBleed(host, rag)
@@ -415,6 +505,26 @@ hook.Add("Think", "Zevil_FakeInfected_Control", function()
         if now < (host.ZevilFakeNextControl or 0) then continue end
         host.ZevilFakeNextControl = now + interval
         ControlPuppet(host, rag, now)
+    end
+end)
+
+local nextRecoveryScan = 0
+hook.Add("Think", "Zevil_FakeInfected_ResumeAfterZCityRecovery", function()
+    local now = CurTime()
+    if now < nextRecoveryScan then return end
+    nextRecoveryScan = now + 0.25
+    for _, host in ipairs(ents.FindByClass("npc_zevil_infected")) do
+        if not IsValid(host) or not host.ZevilFakeUsingZCityDowned then continue end
+        if host:Health() <= 0 then
+            host.ZevilFakeUsingZCityDowned = nil
+            continue
+        end
+        if host.BZCNNPCDowned or IsValid(host.BZCNNPCRagdoll) then continue end
+
+        host.ZevilFakeUsingZCityDowned = nil
+        host:SetNoDraw(false)
+        host:DrawShadow(true)
+        QueueAttach(host, true)
     end
 end)
 
