@@ -60,26 +60,30 @@ function Zevil.AttachZCityNPCSupport(ent, className, faction)
                 if ent.ZevilZCitySupportNative then
                     ent.IsOrganism = true
                     ent.hg_organism = true
+                    ent.ZevilZCitySupportWarned = nil
+                    return
                 end
-                return
+
+                -- Attach may create its safe fallback before Z-City's organism
+                -- API finishes loading. Retry so the tracked state can upgrade
+                -- to the real native organism/wound lifecycle.
             elseif not ok and not ent.ZevilZCitySupportWarned then
                 ent.ZevilZCitySupportWarned = true
                 ErrorNoHalt("[Zevil] Z-City NPC injury attachment failed for "
                     .. tostring(ent:GetClass()) .. ": " .. tostring(state) .. "\n")
             end
-        end
 
-        -- Autorun order differs across collections. Retry briefly if BZCN's
-        -- injury support hasn't registered yet; never create an organism table ourselves.
-        if count < 40 then
-            timer.Simple(0.5, function()
-                if IsValid(ent) then attempt(count + 1) end
-            end)
-        elseif not ent.ZevilZCitySupportWarned then
-            ent.ZevilZCitySupportWarned = true
-            print("[Zevil] Z-City NPC injury support is unavailable; "
-                .. tostring(ent:GetClass()) .. " will use its standalone behavior.")
-        end
+            -- Autorun order differs across collections. Retry until both the
+            -- support module and native organism Add/Clear registry are ready.
+            if count < 40 then
+                timer.Simple(0.5, function()
+                    if IsValid(ent) then attempt(count + 1) end
+                end)
+            elseif not ent.ZevilZCitySupportNative and not ent.ZevilZCitySupportWarned then
+                ent.ZevilZCitySupportWarned = true
+                print("[Zevil] Native Z-City NPC injury support is unavailable; "
+                    .. tostring(ent:GetClass()) .. " will use its standalone behavior.")
+            end
     end
 
     attempt(0)
