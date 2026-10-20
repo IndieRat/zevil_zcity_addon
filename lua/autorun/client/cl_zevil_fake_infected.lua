@@ -29,11 +29,21 @@ hook.Add("PostDrawOpaqueRenderables", "Zevil_FakeInfected_MouthBlood", function(
 
         local head = rag:LookupBone("ValveBiped.Bip01_Head1")
         if not head then continue end
-        local headPos = rag:GetBonePosition(head)
-        if not headPos or headPos == vector_origin then continue end
 
-        local forward, up = rag:GetForward(), rag:GetUp()
-        local mouth = headPos + forward * 4 - up * 5
+        local headPos, headAng
+        local matrix = rag:GetBoneMatrix(head)
+        if matrix then
+            headPos = matrix:GetTranslation()
+            headAng = matrix:GetAngles()
+        else
+            headPos, headAng = rag:GetBonePosition(head)
+        end
+        if not isvector(headPos) or headPos == vector_origin or not isangle(headAng) then continue end
+
+        -- Use the actual head orientation rather than the ragdoll entity's root
+        -- angles, so the mouth cue stays on the face when its head is turned.
+        local forward, up = headAng:Forward(), headAng:Up()
+        local mouth = headPos + forward * 3.6 - up * 3.2
         local phase = rag:EntIndex()
         local pulse = 0.75 + math.abs(math.sin(CurTime() * 2.2 + phase)) * 0.25
 
