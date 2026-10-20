@@ -127,41 +127,91 @@ end
 
 local function ApplyInfectedPose(name, angle, time, phase, movement, amount, crawling)
     local a = Angle(angle.p, angle.y, angle.r)
-    local gait = math.sin(time * (movement > 15 and 7.5 or 1.8) + phase)
-    local sway = math.sin(time * 1.35 + phase * 0.7)
-    local idleTremor = math.sin(time * 5.1 + phase) * 1.5
+    local isLeft = name:find("_l_", 1, true) ~= nil
+    local isRight = name:find("_r_", 1, true) ~= nil
+    local sidePhase = isRight and math.pi or 0
+
+    -- Drive both sides from a shared clock but half a cycle apart. This avoids
+    -- a mirrored/stiff "march" and gives the legs and opposite arms a real gait.
+    local speed = math.max(movement, 0)
+    local run = math.Clamp((speed - 105) / 100, 0, 1)
+    local moving = math.Clamp((speed - 7) / 55, 0, 1)
+    local cadence = math.Clamp(2.7 + speed * 0.038, 2.7, 10.5)
+    local cycle = time * cadence + phase + sidePhase
+    local legSwing = math.sin(cycle) * moving
+    local armSwing = math.sin(cycle + math.pi) * moving
+    local kneeLift = math.max(math.sin(cycle + math.pi * 0.5), 0) * moving
+    local bodySway = math.sin(time * (1.1 + run * 1.5) + phase) * (1.8 + moving * 2.2)
+    local bodyTwist = math.sin(cycle * 0.5) * (2.5 + moving * 3.5)
+    local headBob = math.sin(cycle * 2) * (0.7 + moving * 1.5)
+    local tremor = math.sin(time * 5.1 + phase) * 1.2
+    local tuck = math.Clamp(moving + run * 0.35, 0, 1)
 
     if name == "valvebiped.bip01_pelvis" then
-        a:RotateAroundAxis(a:Forward(), sway * 2.5 * amount)
+        a:RotateAroundAxis(a:Forward(), bodySway * amount)
+        a:RotateAroundAxis(a:Up(), bodyTwist * 0.55 * amount)
+        a:RotateAroundAxis(a:Right(), (run * 5 + tremor * 0.3) * amount)
+
     elseif name == "valvebiped.bip01_spine" or name == "valvebiped.bip01_spine1"
-        or name == "valvebiped.bip01_spine2" then
-        a:RotateAroundAxis(a:Right(), ((crawling and 38 or 9) + gait * (crawling and 1.5 or 2.5)) * amount)
-        a:RotateAroundAxis(a:Forward(), (7 * sway + idleTremor) * amount)
-    elseif name == "valvebiped.bip01_spine4" or name == "valvebiped.bip01_neck1" then
-        a:RotateAroundAxis(a:Right(), ((crawling and 22 or 4) - gait * 2) * amount)
-        a:RotateAroundAxis(a:Forward(), (-5 * sway) * amount)
+        or name == "valvebiped.bip01_spine2" or name == "valvebiped.bip01_spine4" then
+        local level = name == "valvebiped.bip01_spine" and 0
+            or name == "valvebiped.bip01_spine1" and 1
+            or name == "valvebiped.bip01_spine2" and 2 or 3
+        local runLean = 5 + level * 4 + run * (8 + level * 4)
+        local forwardBend = crawling and (34 + level * 3) or runLean
+        a:RotateAroundAxis(a:Right(), (forwardBend + math.sin(cycle) * (1.3 + moving * 2.2)) * amount)
+        a:RotateAroundAxis(a:Forward(), (bodySway * 0.8 + tremor) * amount)
+        a:RotateAroundAxis(a:Up(), (bodyTwist + legSwing * 2.5) * amount)
+
+    elseif name == "valvebiped.bip01_neck1" then
+        a:RotateAroundAxis(a:Right(), ((crawling and 20 or (3 - run * 5)) - headBob) * amount)
+        a:RotateAroundAxis(a:Forward(), (-bodySway * 0.6) * amount)
+        a:RotateAroundAxis(a:Up(), (-bodyTwist * 0.35) * amount)
+
     elseif name == "valvebiped.bip01_head1" then
-        a:RotateAroundAxis(a:Right(), ((crawling and -10 or 7) + 4 * sway) * amount)
-        a:RotateAroundAxis(a:Forward(), (9 * math.sin(time * 1.05 + phase)) * amount)
-        a:RotateAroundAxis(a:Up(), (6 * math.sin(time * 0.8 + phase * 1.3)) * amount)
-    elseif name == "valvebiped.bip01_l_upperarm" then
-        a:RotateAroundAxis(a:Right(), (crawling and -48 or -13) * amount)
-        a:RotateAroundAxis(a:Forward(), (crawling and -22 or -11) * amount)
-    elseif name == "valvebiped.bip01_l_forearm" then
-        a:RotateAroundAxis(a:Right(), (crawling and -62 or -27) * amount)
-    elseif name == "valvebiped.bip01_r_upperarm" then
-        a:RotateAroundAxis(a:Right(), (crawling and 42 or 17) * amount)
-        a:RotateAroundAxis(a:Forward(), (crawling and 18 or 12) * amount)
-    elseif name == "valvebiped.bip01_r_forearm" then
-        a:RotateAroundAxis(a:Right(), (crawling and -58 or -38) * amount)
-    elseif name == "valvebiped.bip01_l_thigh" then
-        a:RotateAroundAxis(a:Right(), (crawling and -25 or gait * 5) * amount)
-    elseif name == "valvebiped.bip01_r_thigh" then
-        a:RotateAroundAxis(a:Right(), (crawling and -18 or -gait * 3) * amount)
-    elseif name == "valvebiped.bip01_l_calf" then
-        a:RotateAroundAxis(a:Right(), (crawling and 35 or math.max(gait, 0) * 6) * amount)
-    elseif name == "valvebiped.bip01_r_calf" then
-        a:RotateAroundAxis(a:Right(), (crawling and 30 or math.max(-gait, 0) * 8) * amount)
+        -- Counterbalance the running hunch so the head stays aimed generally ahead.
+        a:RotateAroundAxis(a:Right(), ((crawling and -10 or (5 - run * 7)) + headBob) * amount)
+        a:RotateAroundAxis(a:Forward(), (8 * math.sin(time * 1.05 + phase) - bodySway * 0.45) * amount)
+        a:RotateAroundAxis(a:Up(), (5 * math.sin(time * 0.8 + phase * 1.3) - bodyTwist * 0.25) * amount)
+
+    elseif name == "valvebiped.bip01_l_upperarm" or name == "valvebiped.bip01_r_upperarm" then
+        if crawling then
+            a:RotateAroundAxis(a:Right(), (isLeft and -48 or 42) * amount)
+            a:RotateAroundAxis(a:Forward(), (isLeft and -22 or 18) * amount)
+        else
+            -- Both shoulders fold in; mirrored roll brings the elbows closer to
+            -- the chest. The fore/aft swing is opposite the same-side leg.
+            local shoulderSwing = armSwing * (9 + run * 9)
+            a:RotateAroundAxis(a:Right(), (-19 + shoulderSwing - run * 5) * amount)
+            a:RotateAroundAxis(a:Forward(), (isLeft and -12 or 12) * amount)
+            a:RotateAroundAxis(a:Up(), (isLeft and 5 or -5) * amount)
+        end
+
+    elseif name == "valvebiped.bip01_l_forearm" or name == "valvebiped.bip01_r_forearm" then
+        if crawling then
+            a:RotateAroundAxis(a:Right(), (isLeft and -62 or -58) * amount)
+        else
+            -- Bent elbows keep the forearms tucked instead of hanging straight.
+            local elbowFlex = -54 - tuck * 12 + math.max(armSwing, 0) * 7
+            a:RotateAroundAxis(a:Right(), elbowFlex * amount)
+            a:RotateAroundAxis(a:Forward(), (isLeft and 13 or -13) * amount)
+        end
+
+    elseif name == "valvebiped.bip01_l_hand" or name == "valvebiped.bip01_r_hand" then
+        a:RotateAroundAxis(a:Right(), (crawling and -12 or -8 - tuck * 9) * amount)
+        a:RotateAroundAxis(a:Forward(), (isLeft and 7 or -7) * amount)
+
+    elseif name == "valvebiped.bip01_l_thigh" or name == "valvebiped.bip01_r_thigh" then
+        a:RotateAroundAxis(a:Right(), (crawling and -25 or legSwing * (8 + run * 10)) * amount)
+        a:RotateAroundAxis(a:Forward(), (isLeft and -1.5 or 1.5) * amount)
+
+    elseif name == "valvebiped.bip01_l_calf" or name == "valvebiped.bip01_r_calf" then
+        local kneeBend = kneeLift * (9 + run * 14)
+        a:RotateAroundAxis(a:Right(), (crawling and 33 or kneeBend) * amount)
+
+    elseif name == "valvebiped.bip01_l_foot" or name == "valvebiped.bip01_r_foot" then
+        a:RotateAroundAxis(a:Right(), (crawling and -8 or -kneeLift * (4 + run * 5)) * amount)
+        a:RotateAroundAxis(a:Forward(), (isLeft and 2 or -2) * amount)
     end
 
     return a
