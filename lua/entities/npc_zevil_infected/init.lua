@@ -104,7 +104,25 @@ local function SetupBZCNCompatibility(self)
     self:SetNW2String("BZCNFaction", "zombie")
     self:SetNW2String("BZCNTeamName", "Zevil")
 
-    BZCN.InstallAdapter(self)
+    -- Run the same BZCN class application that gives its native headcrab
+    -- zombie the ZombieStyle appearance/material treatment. The actual model
+    -- remains Zevil's randomized civilian model; ApplyClass sets class metadata
+    -- and materials but does not replace the current entity model.
+    local classApplied = false
+    if isfunction(BZCN.ApplyClass) then
+        local ok, result = pcall(BZCN.ApplyClass, self, "ZevilInfected", true)
+        classApplied = ok and result == true
+        if not ok then
+            ErrorNoHalt("[Zevil] BZCN infected class application failed: " .. tostring(result) .. "\n")
+        end
+    end
+    if not classApplied then
+        local ok, err = pcall(BZCN.InstallAdapter, self)
+        if not ok then
+            ErrorNoHalt("[Zevil] Could not install BZCN adapter: " .. tostring(err) .. "\n")
+        end
+    end
+
     local formerName = string.Trim(tostring(self.ZevilFormerName or ""))
     local displayName = formerName ~= "" and (formerName .. " (infected)") or ("Infected " .. tostring(self:EntIndex()))
     self.BZCNDisplayName = displayName
